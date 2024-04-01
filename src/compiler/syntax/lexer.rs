@@ -45,12 +45,12 @@ impl Lexer {
         };
         match lexer.pump_token() {
             Ok(_) => return lexer,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => e.report_and_panic(),
         };
     }
 
-    pub fn peek(&mut self) -> &Option<Token> {
-        return &self.next_token;
+    pub fn peek(&mut self) -> Option<&Token> {
+        self.next_token.as_ref()
     }
 
     pub fn next(&mut self) {
@@ -59,7 +59,7 @@ impl Lexer {
         }
         match self.pump_token() {
             Ok(_) => (),
-            Err(e) => panic!("{:#?}", e),
+            Err(e) => e.report_and_panic(),
         }
     }
 

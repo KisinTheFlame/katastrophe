@@ -1,11 +1,14 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Keyword {
     Define,
-    Extern,
+    Import,
     Const,
+    If,
+    Else,
+    While,
 }
 
 impl Keyword {
@@ -13,8 +16,11 @@ impl Keyword {
         HashMap::from(
             [
                 ("def", Keyword::Define),
-                ("extern", Keyword::Extern),
+                ("import", Keyword::Import),
                 ("const", Keyword::Const),
+                ("if", Keyword::If),
+                ("else", Keyword::Else),
+                ("while", Keyword::While),
             ]
             .map(|(s, k)| (s.to_string(), k)),
         )
@@ -29,34 +35,39 @@ impl Keyword {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Symbol {
     Add,
-    Substract,
+    Subtract,
     Multiply,
     Divide,
 
-    LeftParenthese,
-    RightParenthese,
+    LeftParentheses,
+    RightParentheses,
     LeftBracket,
     RightBracket,
     LeftBrace,
     RightBrace,
+
+    Comma,
+    Semicolon,
 }
 
 impl Symbol {
     const SYMBOL_MAP: Lazy<HashMap<char, Symbol>> = Lazy::new(|| {
         HashMap::from([
             ('+', Symbol::Add),
-            ('-', Symbol::Substract),
+            ('-', Symbol::Subtract),
             ('*', Symbol::Multiply),
             ('/', Symbol::Divide),
-            ('(', Symbol::LeftParenthese),
-            (')', Symbol::RightParenthese),
+            ('(', Symbol::LeftParentheses),
+            (')', Symbol::RightParentheses),
             ('[', Symbol::LeftBracket),
             (']', Symbol::RightBracket),
             ('{', Symbol::LeftBrace),
             ('}', Symbol::RightBrace),
+            (',', Symbol::Comma),
+            (';', Symbol::Semicolon),
         ])
     });
 
@@ -69,7 +80,7 @@ impl Symbol {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Identifier(String),
     IntLiteral(i32),
