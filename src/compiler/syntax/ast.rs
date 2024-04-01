@@ -73,6 +73,11 @@ pub enum Expression {
 pub enum Statement {
     Block(Vec<Statement>),
     Expression(Expression),
+    If {
+        condition: Expression,
+        body: Box<Statement>,
+        else_body: Option<Box<Statement>>,
+    },
 }
 
 #[derive(Debug)]
