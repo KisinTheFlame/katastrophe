@@ -65,25 +65,17 @@ impl Lexer {
 
     fn pump_token(&mut self) -> Result<(), LexError> {
         self.reader.skip_spaces();
-        let token = match self.reader.peek() {
-            Some('0'..='9') => self.digest_number()?,
-            Some('a'..='z' | 'A'..='Z' | '_') => self.digest_identifier_or_keyword()?,
-            Some(c) => {
-                if Symbol::validate(c) {
-                    self.digest_symbol()?
-                } else {
-                    return Err(LexError {
-                        kind: LexErrorKind::UnexpectedCharacter(c),
-                    });
-                }
-            }
-            None => {
-                self.next_token = None;
-                return Ok(());
-            }
-        };
-        self.next_token = Some(token);
-        return Ok(());
+        if let Some(token) = self.reader.peek() {
+            let token = match token {
+                '0'..='9' => self.digest_number()?,
+                'a'..='z' | 'A'..='Z' | '_' => self.digest_identifier_or_keyword()?,
+                _ => self.digest_symbol()?,
+            };
+            self.next_token = Some(token);
+        } else {
+            self.next_token = None;
+        }
+        Ok(())
     }
 
     fn digest_number(&mut self) -> Result<Token, LexError> {
@@ -135,15 +127,75 @@ impl Lexer {
 
     fn digest_symbol(&mut self) -> Result<Token, LexError> {
         if let Some(c) = self.reader.peek() {
-            let symbol = match Symbol::from(c) {
-                Some(symbol) => symbol,
-                None => {
+            self.reader.forward();
+            let symbol = match c {
+                '+' => Symbol::Add,
+                '-' => Symbol::Subtract,
+                '*' => Symbol::Multiply,
+                '/' => Symbol::Divide,
+                '=' => {
+                    if let Some('=') = self.reader.peek() {
+                        self.reader.forward();
+                        Symbol::Equal
+                    } else {
+                        Symbol::Assign
+                    }
+                }
+                '!' => {
+                    if let Some('=') = self.reader.peek() {
+                        self.reader.forward();
+                        Symbol::NotEqual
+                    } else {
+                        Symbol::LogicalNot
+                    }
+                }
+                '<' => {
+                    if let Some('=') = self.reader.peek() {
+                        self.reader.forward();
+                        Symbol::LessThanEqual
+                    } else {
+                        Symbol::LessThan
+                    }
+                }
+                '>' => {
+                    if let Some('=') = self.reader.peek() {
+                        self.reader.forward();
+                        Symbol::GreaterThanEqual
+                    } else {
+                        Symbol::GreaterThan
+                    }
+                },
+                '&' => {
+                    if let Some('&') = self.reader.peek() {
+                        self.reader.forward();
+                        Symbol::LogicalAnd
+                    } else {
+                        Symbol::BitAnd
+                    }
+                },
+                '|' => {
+                    if let Some('|') = self.reader.peek() {
+                        self.reader.forward();
+                        Symbol::LogicalOr
+                    } else {
+                        Symbol::BitOr
+                    }
+                },
+                '~' => Symbol::BitNot,
+                '(' => Symbol::LeftParentheses,
+                ')' => Symbol::RightParentheses,
+                '[' => Symbol::LeftBracket,
+                ']' => Symbol::RightBracket,
+                '{' => Symbol::LeftBrace,
+                '}' => Symbol::RightBrace,
+                ',' => Symbol::Comma,
+                ';' => Symbol::Semicolon,
+                c => {
                     return Err(LexError {
                         kind: LexErrorKind::UnexpectedCharacter(c),
-                    })
+                    });
                 }
             };
-            self.reader.forward();
             Ok(Token::Symbol(symbol))
         } else {
             return Err(LexError {
