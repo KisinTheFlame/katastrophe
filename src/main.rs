@@ -1,20 +1,21 @@
 use std::fs;
 use std::process;
 
-use compiler::syntax::lexer::Lexer;
+use compiler::syntax::parser::Parser;
 
 pub mod compiler;
 
 fn main() {
-    let mut lexer = Lexer::new(match fs::read_to_string("test.txt") {
+    let code = match fs::read_to_string("test.txt") {
         Ok(code) => code,
         Err(_) => {
-            println!("faced fatal error when reading file");
+            println!("encountering fatal error when reading file");
             process::exit(1);
         }
-    });
-    while let Some(token) = lexer.peek() {
-        println!("{:?}", token);
-        lexer.next();
+    };
+    let mut parser = Parser::new(code);
+    match parser.parse_program() {
+        Ok(program) => println!("{:#?}", program),
+        Err(e) => println!("{:?}", e),
     }
 }
