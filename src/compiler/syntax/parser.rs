@@ -138,6 +138,30 @@ impl Parser {
         }
     }
 
+    fn parse_unary_expression(&mut self) -> Result<Expression, ParseError> {
+        if let Some(Token::Symbol(symbol)) = self.lexer.peek() {
+            let operator = match symbol {
+                Symbol::Subtract => UnaryOperator::Negative,
+                Symbol::LogicalNot => UnaryOperator::LogicalNot,
+                Symbol::BitNot => UnaryOperator::BitNot,
+                symbol => {
+                    return Err(ParseError {
+                        kind: ParseErrorKind::MissingSymbol(symbol.clone()),
+                    });
+                }
+            };
+            self.lexer.next();
+            Ok(Expression::Unary(operator, Box::new(self.parse_primary()?)))
+        } else {
+            let kind = if let Some(token) = self.lexer.peek() {
+                ParseErrorKind::UnexpectedToken(token.clone())
+            } else {
+                ParseErrorKind::UnexpectedEOF
+            };
+            Err(ParseError { kind })
+        }
+    }
+
     fn parse_primary(&mut self) -> Result<Expression, ParseError> {
         match self.lexer.peek() {
             Some(Token::Identifier(_)) => Ok(self.parse_identifier()?),
@@ -146,16 +170,7 @@ impl Parser {
             Some(Token::Symbol(Symbol::LeftParentheses)) => {
                 Ok(self.parse_parentheses_expression()?)
             }
-            Some(Token::Symbol(Symbol::Subtract)) => {
-                self.lexer.next();
-                Ok(Expression::Unary(
-                    UnaryOperator::Negative,
-                    Box::new(self.parse_primary()?),
-                ))
-            }
-            Some(token) => Err(ParseError {
-                kind: ParseErrorKind::UnexpectedToken(token.clone()),
-            }),
+            Some(_) => Ok(self.parse_unary_expression()?),
             None => Err(ParseError {
                 kind: ParseErrorKind::UnexpectedEOF,
             }),
@@ -169,13 +184,24 @@ impl Parser {
                 return Ok(None);
             }
         };
-        match symbol {
-            Symbol::Add => Ok(Some(BinaryOperator::Add)),
-            Symbol::Subtract => Ok(Some(BinaryOperator::Subtract)),
-            Symbol::Multiply => Ok(Some(BinaryOperator::Multiply)),
-            Symbol::Divide => Ok(Some(BinaryOperator::Divide)),
-            _ => Ok(None),
-        }
+        let symbol = match symbol {
+            Symbol::Add => Some(BinaryOperator::Add),
+            Symbol::Subtract => Some(BinaryOperator::Subtract),
+            Symbol::Multiply => Some(BinaryOperator::Multiply),
+            Symbol::Divide => Some(BinaryOperator::Divide),
+            Symbol::LogicalAnd => Some(BinaryOperator::LogicalAnd),
+            Symbol::LogicalOr => Some(BinaryOperator::LogicalOr),
+            Symbol::BitAnd => Some(BinaryOperator::BitAnd),
+            Symbol::BitOr => Some(BinaryOperator::BitOr),
+            Symbol::Equal => Some(BinaryOperator::Equal),
+            Symbol::NotEqual => Some(BinaryOperator::NotEqual),
+            Symbol::LessThan => Some(BinaryOperator::LessThan),
+            Symbol::LessThanEqual => Some(BinaryOperator::LessThanEqual),
+            Symbol::GreaterThan => Some(BinaryOperator::GreaterThan),
+            Symbol::GreaterThanEqual => Some(BinaryOperator::GreaterThanEqual),
+            _ => None,
+        };
+        Ok(symbol)
     }
 
     fn parse_binary_expression_rhs(
