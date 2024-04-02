@@ -11,27 +11,27 @@ pub enum Keyword {
     While,
 }
 
-impl Keyword {
-    const KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
-        HashMap::from(
-            [
-                ("def", Keyword::Define),
-                ("import", Keyword::Import),
-                ("const", Keyword::Const),
-                ("if", Keyword::If),
-                ("else", Keyword::Else),
-                ("while", Keyword::While),
-            ]
-            .map(|(s, k)| (s.to_string(), k)),
-        )
-    });
+static KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
+    HashMap::from(
+        [
+            ("def", Keyword::Define),
+            ("import", Keyword::Import),
+            ("const", Keyword::Const),
+            ("if", Keyword::If),
+            ("else", Keyword::Else),
+            ("while", Keyword::While),
+        ]
+        .map(|(s, k)| (s.to_string(), k)),
+    )
+});
 
+impl Keyword {
     pub fn validate(s: &String) -> bool {
-        Self::KEYWORD_MAP.contains_key(s)
+        KEYWORD_MAP.contains_key(s)
     }
 
     pub fn from(s: &String) -> Option<Keyword> {
-        Self::KEYWORD_MAP.get(s).map(Keyword::clone)
+        KEYWORD_MAP.get(s).cloned()
     }
 }
 

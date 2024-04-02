@@ -25,7 +25,7 @@ impl Parser {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     fn expect_keyword(&mut self, expected_keyword: Keyword) -> bool {
@@ -52,7 +52,7 @@ impl Parser {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     fn expect_symbol(&mut self, expected_symbol: Symbol) -> bool {
@@ -297,9 +297,9 @@ impl Parser {
             Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(),
             Some(_) => self.parse_expression_statement(),
             None => {
-                return Err(ParseError {
+                Err(ParseError {
                     kind: ParseErrorKind::UnexpectedEOF,
-                });
+                })
             }
         }
     }
@@ -343,7 +343,7 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut functions = Vec::<Function>::new();
-        while self.lexer.peek() != None {
+        while self.lexer.peek().is_some() {
             functions.push(self.parse_function()?);
         }
         Ok(Program { functions })
