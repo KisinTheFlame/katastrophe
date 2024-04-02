@@ -336,8 +336,16 @@ impl Parser {
         Ok(Statement::Let(left_value, expression))
     }
 
+    fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
+        self.digest_keyword(&Keyword::Return)?;
+        let expression = self.parse_expression()?;
+        self.digest_symbol(&Symbol::Semicolon)?;
+        Ok(Statement::Return(expression))
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.lexer.peek() {
+            Some(Token::Keyword(Keyword::Return)) => self.parse_return_statement(),
             Some(Token::Keyword(Keyword::If)) => self.parse_if_statement(),
             Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(),
             Some(Token::Keyword(Keyword::Define)) => self.parse_define_statement(),

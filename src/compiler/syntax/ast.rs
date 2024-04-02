@@ -116,6 +116,7 @@ pub struct FunctionPrototype {
 pub enum Statement {
     Empty,
     Block(Vec<Statement>),
+    Return(Expression),
     Expression(Expression),
     If {
         condition: Expression,
