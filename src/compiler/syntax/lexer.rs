@@ -10,15 +10,15 @@ struct CodeReader {
 
 impl CodeReader {
     fn new(code: String) -> CodeReader {
-        let code: Vec<_> = code.chars().into_iter().collect();
-        return CodeReader { code, position: 0 };
+        let code: Vec<_> = code.chars().collect();
+        CodeReader { code, position: 0 }
     }
 
     fn peek(&self) -> Option<char> {
         if self.position >= self.code.len() {
             return None;
         }
-        return Some(self.code[self.position]);
+        Some(self.code[self.position])
     }
 
     fn forward(&mut self) {
@@ -44,9 +44,9 @@ impl Lexer {
             next_token: None,
         };
         match lexer.pump_token() {
-            Ok(_) => return lexer,
+            Ok(_) => lexer,
             Err(e) => e.report_and_panic(),
-        };
+        }
     }
 
     pub fn peek(&mut self) -> Option<&Token> {
@@ -89,22 +89,18 @@ impl Lexer {
         }
         if !number.contains('.') {
             match number.parse::<i32>() {
-                Ok(x) => return Ok(Token::IntLiteral(x)),
-                Err(_) => {
-                    return Err(LexError {
-                        kind: LexErrorKind::IllegalIntegerLiteral(number),
-                    })
-                }
-            };
+                Ok(x) => Ok(Token::IntLiteral(x)),
+                Err(_) => Err(LexError {
+                    kind: LexErrorKind::IllegalIntegerLiteral(number),
+                }),
+            }
         } else {
             match number.parse::<f64>() {
-                Ok(x) => return Ok(Token::FloatLiteral(x)),
-                Err(_) => {
-                    return Err(LexError {
-                        kind: LexErrorKind::IllegalFloatLiteral(number),
-                    })
-                }
-            };
+                Ok(x) => Ok(Token::FloatLiteral(x)),
+                Err(_) => Err(LexError {
+                    kind: LexErrorKind::IllegalFloatLiteral(number),
+                }),
+            }
         }
     }
 
@@ -164,7 +160,7 @@ impl Lexer {
                     } else {
                         Symbol::GreaterThan
                     }
-                },
+                }
                 '&' => {
                     if let Some('&') = self.reader.peek() {
                         self.reader.forward();
@@ -172,7 +168,7 @@ impl Lexer {
                     } else {
                         Symbol::BitAnd
                     }
-                },
+                }
                 '|' => {
                     if let Some('|') = self.reader.peek() {
                         self.reader.forward();
@@ -180,7 +176,7 @@ impl Lexer {
                     } else {
                         Symbol::BitOr
                     }
-                },
+                }
                 '~' => Symbol::BitNot,
                 '(' => Symbol::LeftParentheses,
                 ')' => Symbol::RightParentheses,
@@ -198,9 +194,9 @@ impl Lexer {
             };
             Ok(Token::Symbol(symbol))
         } else {
-            return Err(LexError {
+            Err(LexError {
                 kind: LexErrorKind::UnexpectedEOF,
-            });
+            })
         }
     }
 }
