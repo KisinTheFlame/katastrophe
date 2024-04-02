@@ -24,16 +24,16 @@ pub enum UnaryOperator {
 impl Operator for UnaryOperator {
     fn precedence(&self) -> u8 {
         match self {
-            UnaryOperator::LogicalNot => 14u8,
-            UnaryOperator::BitNot => 14u8,
+            UnaryOperator::LogicalNot |
+            UnaryOperator::BitNot |
             UnaryOperator::Negative => 14u8,
         }
     }
 
     fn is_left_associative(&self) -> bool {
         match self {
-            UnaryOperator::LogicalNot => false,
-            UnaryOperator::BitNot => false,
+            UnaryOperator::LogicalNot |
+            UnaryOperator::BitNot |
             UnaryOperator::Negative => false,
         }
     }
@@ -63,39 +63,36 @@ pub enum BinaryOperator {
 impl Operator for BinaryOperator {
     fn precedence(&self) -> u8 {
         match self {
-            BinaryOperator::Add => 12u8,
-            BinaryOperator::Subtract => 12u8,
-            BinaryOperator::Multiply => 13u8,
-            BinaryOperator::Divide => 13u8,
-            BinaryOperator::LogicalAnd => 5u8,
-            BinaryOperator::LogicalOr => 4u8,
+            BinaryOperator::Multiply | BinaryOperator::Divide => 13u8,
+            BinaryOperator::Add | BinaryOperator::Subtract => 12u8,
+            BinaryOperator::LessThan
+            | BinaryOperator::LessThanEqual
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::GreaterThanEqual => 10u8,
+            BinaryOperator::Equal | BinaryOperator::NotEqual => 9u8,
             BinaryOperator::BitAnd => 8u8,
             BinaryOperator::BitOr => 6u8,
-            BinaryOperator::Equal => 9u8,
-            BinaryOperator::NotEqual => 9u8,
-            BinaryOperator::LessThan => 10u8,
-            BinaryOperator::LessThanEqual => 10u8,
-            BinaryOperator::GreaterThan => 10u8,
-            BinaryOperator::GreaterThanEqual => 10u8,
+            BinaryOperator::LogicalAnd => 5u8,
+            BinaryOperator::LogicalOr => 4u8,
         }
     }
 
     fn is_left_associative(&self) -> bool {
         match self {
-            BinaryOperator::Add => true,
-            BinaryOperator::Subtract => true,
-            BinaryOperator::Multiply => true,
-            BinaryOperator::Divide => true,
-            BinaryOperator::LogicalAnd => true,
-            BinaryOperator::LogicalOr => true,
-            BinaryOperator::BitAnd => true,
-            BinaryOperator::BitOr => true,
-            BinaryOperator::Equal => true,
-            BinaryOperator::NotEqual => true,
-            BinaryOperator::LessThan => true,
-            BinaryOperator::LessThanEqual => true,
-            BinaryOperator::GreaterThan => true,
-            BinaryOperator::GreaterThanEqual => true,
+            BinaryOperator::Add
+            | BinaryOperator::Subtract
+            | BinaryOperator::Multiply
+            | BinaryOperator::Divide
+            | BinaryOperator::LogicalAnd
+            | BinaryOperator::LogicalOr
+            | BinaryOperator::BitAnd
+            | BinaryOperator::BitOr
+            | BinaryOperator::Equal
+            | BinaryOperator::NotEqual
+            | BinaryOperator::LessThan
+            | BinaryOperator::LessThanEqual
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::GreaterThanEqual => true,
         }
     }
 }
