@@ -18,14 +18,13 @@ pub struct LexError {
 }
 
 impl LexError {
+    /// # Panics
     pub fn report_and_panic(&self) -> ! {
         let message = match self.kind {
             LexErrorKind::Unknown => "encountering unknown error".to_string(),
             LexErrorKind::InternalMess(message) => message.to_string(),
-            LexErrorKind::IllegalIntegerLiteral(ref s) => {
-                format!("encountering illegal literal: {s}")
-            }
-            LexErrorKind::IllegalFloatLiteral(ref s) => {
+            LexErrorKind::IllegalIntegerLiteral(ref s)
+            | LexErrorKind::IllegalFloatLiteral(ref s) => {
                 format!("encountering illegal literal: {s}")
             }
             LexErrorKind::UnexpectedCharacter(c) => {
@@ -56,20 +55,21 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    /// # Panics
     pub fn report_and_panic(&self) -> ! {
         let message = match self.kind {
             ParseErrorKind::Unknown => "encountering unknown error".to_string(),
             ParseErrorKind::InternalMess(message) => message.to_string(),
             ParseErrorKind::MissingIdentifier => "failed to expect an identifier".to_string(),
             ParseErrorKind::MissingKeyword(ref keyword) => {
-                format!("missing expected keyword: {:?}", keyword)
+                format!("missing expected keyword: {keyword:?}")
             }
             ParseErrorKind::MissingSymbol(ref symbol) => {
-                format!("missing expected symbol: {:?}", symbol)
+                format!("missing expected symbol: {symbol:?}")
             }
             ParseErrorKind::UnexpectedEOF => "encountering unexpected EOF".to_string(),
             ParseErrorKind::UnexpectedToken(ref token) => {
-                format!("encountering unexpected token: {:?}", token)
+                format!("encountering unexpected token: {token:?}")
             }
         };
         panic!("{message}")

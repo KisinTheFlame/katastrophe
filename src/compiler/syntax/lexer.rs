@@ -1,5 +1,5 @@
 use super::{
-    error::{LexError, LexErrorKind},
+    err::{LexError, LexErrorKind},
     token::{Keyword, Symbol, Token},
 };
 
@@ -9,7 +9,7 @@ struct CodeReader {
 }
 
 impl CodeReader {
-    fn new(code: String) -> CodeReader {
+    fn new(code: &str) -> CodeReader {
         let code: Vec<_> = code.chars().collect();
         CodeReader { code, position: 0 }
     }
@@ -38,13 +38,14 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(code: String) -> Lexer {
+    #[must_use]
+    pub fn new(code: &str) -> Lexer {
         let mut lexer = Lexer {
             reader: CodeReader::new(code),
             next_token: None,
         };
         match lexer.pump_token() {
-            Ok(_) => lexer,
+            Ok(()) => lexer,
             Err(e) => e.report_and_panic(),
         }
     }
@@ -58,7 +59,7 @@ impl Lexer {
             return;
         }
         match self.pump_token() {
-            Ok(_) => (),
+            Ok(()) => (),
             Err(e) => e.report_and_panic(),
         }
     }
@@ -87,18 +88,18 @@ impl Lexer {
             number.push(c);
             self.reader.forward();
         }
-        if !number.contains('.') {
-            match number.parse::<i32>() {
-                Ok(x) => Ok(Token::IntLiteral(x)),
-                Err(_) => Err(LexError {
-                    kind: LexErrorKind::IllegalIntegerLiteral(number),
-                }),
-            }
-        } else {
+        if number.contains('.') {
             match number.parse::<f64>() {
                 Ok(x) => Ok(Token::FloatLiteral(x)),
                 Err(_) => Err(LexError {
                     kind: LexErrorKind::IllegalFloatLiteral(number),
+                }),
+            }
+        } else {
+            match number.parse::<i32>() {
+                Ok(x) => Ok(Token::IntLiteral(x)),
+                Err(_) => Err(LexError {
+                    kind: LexErrorKind::IllegalIntegerLiteral(number),
                 }),
             }
         }
@@ -107,11 +108,24 @@ impl Lexer {
     fn digest_identifier_or_keyword(&mut self) -> Result<Token, LexError> {
         let mut identifier = String::new();
         while let Some(c) = self.reader.peek() {
-            if !c.is_ascii_alphanumeric() && c != '_' {
+            if c.is_ascii_whitespace() {
+                if identifier.is_empty() {
+                    return Err(LexError {
+                        kind: LexErrorKind::UnexpectedCharacter(c),
+                    });
+                }
+                break;
+            }
+            if !matches!(c, 'a'..='z' | 'A'..='Z' | '_') {
                 break;
             }
             identifier.push(c);
             self.reader.forward();
+        }
+        if identifier.is_empty() {
+            return Err(LexError {
+                kind: LexErrorKind::UnexpectedEOF,
+            });
         }
         let token = if Keyword::validate(&identifier) {
             Token::Keyword(Keyword::from(&identifier).unwrap())
