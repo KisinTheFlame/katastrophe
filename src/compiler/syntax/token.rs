@@ -5,6 +5,7 @@ use std::collections::HashMap;
 pub enum Keyword {
     Define,
     Using,
+    Return,
     Let,
     If,
     Else,
@@ -16,6 +17,7 @@ static KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
         [
             ("def", Keyword::Define),
             ("using", Keyword::Using),
+            ("return", Keyword::Return),
             ("let", Keyword::Let),
             ("if", Keyword::If),
             ("else", Keyword::Else),
