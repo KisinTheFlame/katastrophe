@@ -1,7 +1,7 @@
 use super::{
     ast::{
-        BinaryOperator, Expression, Function, FunctionPrototype, Operator, Parameter, Program,
-        Statement, UnaryOperator,
+        BinaryOperator, Expression, FunctionPrototype, Operator, Parameter, Program, Statement,
+        UnaryOperator,
     },
     err::{ParseError, ParseErrorKind},
     lexer::Lexer,
@@ -253,6 +253,11 @@ impl Parser {
         Ok(expression)
     }
 
+    fn parse_empty_statement(&mut self) -> Result<Statement, ParseError> {
+        self.digest_symbol(&Symbol::Semicolon)?;
+        Ok(Statement::Empty)
+    }
+
     fn parse_expression_statement(&mut self) -> Result<Statement, ParseError> {
         let expression = self.parse_expression()?;
         self.digest_symbol(&Symbol::Semicolon)?;
@@ -285,17 +290,6 @@ impl Parser {
         })
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        match self.lexer.peek() {
-            Some(Token::Keyword(Keyword::If)) => self.parse_if_statement(),
-            Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(),
-            Some(_) => self.parse_expression_statement(),
-            None => Err(ParseError {
-                kind: ParseErrorKind::UnexpectedEOF,
-            }),
-        }
-    }
-
     fn parse_function_parameter(&mut self) -> Result<Parameter, ParseError> {
         let identifier = self.parse_plain_identifier()?;
         Ok(Parameter { identifier })
@@ -326,19 +320,42 @@ impl Parser {
         })
     }
 
-    fn parse_function(&mut self) -> Result<Function, ParseError> {
+    fn parse_define_statement(&mut self) -> Result<Statement, ParseError> {
         self.digest_keyword(&Keyword::Define)?;
         let prototype = self.parse_function_prototype()?;
-        let body = self.parse_block_statement()?;
-        Ok(Function { prototype, body })
+        let body = Box::new(self.parse_block_statement()?);
+        Ok(Statement::Define { prototype, body })
+    }
+
+    fn parse_let_statement(&mut self) -> Result<Statement, ParseError> {
+        self.digest_keyword(&Keyword::Let)?;
+        let left_value = self.parse_plain_identifier()?;
+        self.digest_symbol(&Symbol::Assign)?;
+        let expression = self.parse_expression()?;
+        self.digest_symbol(&Symbol::Semicolon)?;
+        Ok(Statement::Let(left_value, expression))
+    }
+
+    fn parse_statement(&mut self) -> Result<Statement, ParseError> {
+        match self.lexer.peek() {
+            Some(Token::Keyword(Keyword::If)) => self.parse_if_statement(),
+            Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(),
+            Some(Token::Keyword(Keyword::Define)) => self.parse_define_statement(),
+            Some(Token::Keyword(Keyword::Let)) => self.parse_let_statement(),
+            Some(Token::Symbol(Symbol::Semicolon)) => self.parse_empty_statement(),
+            Some(_) => self.parse_expression_statement(),
+            None => Err(ParseError {
+                kind: ParseErrorKind::UnexpectedEOF,
+            }),
+        }
     }
 
     /// # Errors
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
-        let mut functions = Vec::<Function>::new();
+        let mut statements = Vec::<Statement>::new();
         while self.lexer.peek().is_some() {
-            functions.push(self.parse_function()?);
+            statements.push(self.parse_statement()?);
         }
-        Ok(Program { functions })
+        Ok(Program { statements })
     }
 }

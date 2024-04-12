@@ -24,17 +24,13 @@ pub enum UnaryOperator {
 impl Operator for UnaryOperator {
     fn precedence(&self) -> u8 {
         match self {
-            UnaryOperator::LogicalNot |
-            UnaryOperator::BitNot |
-            UnaryOperator::Negative => 14u8,
+            UnaryOperator::LogicalNot | UnaryOperator::BitNot | UnaryOperator::Negative => 14u8,
         }
     }
 
     fn is_left_associative(&self) -> bool {
         match self {
-            UnaryOperator::LogicalNot |
-            UnaryOperator::BitNot |
-            UnaryOperator::Negative => false,
+            UnaryOperator::LogicalNot | UnaryOperator::BitNot | UnaryOperator::Negative => false,
         }
     }
 }
@@ -111,13 +107,25 @@ pub enum Expression {
 }
 
 #[derive(Debug)]
+pub struct FunctionPrototype {
+    pub identifier: String,
+    pub parameters: Vec<Parameter>,
+}
+
+#[derive(Debug)]
 pub enum Statement {
+    Empty,
     Block(Vec<Statement>),
     Expression(Expression),
     If {
         condition: Expression,
         body: Box<Statement>,
         else_body: Option<Box<Statement>>,
+    },
+    Let(String, Expression),
+    Define {
+        prototype: FunctionPrototype,
+        body: Box<Statement>,
     },
 }
 
@@ -127,18 +135,6 @@ pub struct Parameter {
 }
 
 #[derive(Debug)]
-pub struct FunctionPrototype {
-    pub identifier: String,
-    pub parameters: Vec<Parameter>,
-}
-
-#[derive(Debug)]
-pub struct Function {
-    pub prototype: FunctionPrototype,
-    pub body: Statement,
-}
-
-#[derive(Debug)]
 pub struct Program {
-    pub functions: Vec<Function>,
+    pub statements: Vec<Statement>,
 }
