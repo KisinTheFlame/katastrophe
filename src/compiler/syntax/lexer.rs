@@ -1,39 +1,11 @@
 use super::{
     err::{LexError, LexErrorKind},
+    text::Reader,
     token::{Keyword, Symbol, Token},
 };
 
-struct CodeReader {
-    code: Vec<char>,
-    position: usize,
-}
-
-impl CodeReader {
-    fn new(code: &str) -> CodeReader {
-        let code: Vec<_> = code.chars().collect();
-        CodeReader { code, position: 0 }
-    }
-
-    fn peek(&self) -> Option<char> {
-        if self.position >= self.code.len() {
-            return None;
-        }
-        Some(self.code[self.position])
-    }
-
-    fn forward(&mut self) {
-        self.position += 1;
-    }
-
-    fn skip_spaces(&mut self) {
-        while self.peek().is_some_and(|c| c.is_ascii_whitespace()) {
-            self.forward();
-        }
-    }
-}
-
 pub struct Lexer {
-    reader: CodeReader,
+    reader: Reader,
     next_token: Option<Token>,
 }
 
@@ -41,7 +13,7 @@ impl Lexer {
     #[must_use]
     pub fn new(code: &str) -> Lexer {
         let mut lexer = Lexer {
-            reader: CodeReader::new(code),
+            reader: Reader::new(code),
             next_token: None,
         };
         match lexer.pump_token() {

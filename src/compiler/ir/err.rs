@@ -23,4 +23,6 @@ pub enum IrErrorKind {
     MissingExpression,
     MissingReturn,
     MissingLet,
+
+    BuiltinFileNotExist,
 }

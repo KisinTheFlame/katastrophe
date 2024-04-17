@@ -1,17 +1,17 @@
+use std::fs;
+
 use super::{
-    err::IrError,
+    err::{IrError, IrErrorKind},
     scope::{Scope, Tag},
 };
 
-pub fn init_builtin_scope(scope: &mut Scope, code_builder: &mut String) {
+pub fn init_builtin_scope(scope: &mut Scope, code_builder: &mut String) -> Result<(), IrError> {
     scope.enter(Tag::Builtin);
-    code_builder.push_str(
-        "
-declare i32 @exit(i32)
-declare i32 @getchar()
-declare i32 @putchar(i32)
-",
-    );
+    let builtin = fs::read_to_string("static/builtin.ll").or(Err(IrError {
+        kind: IrErrorKind::BuiltinFileNotExist,
+    }))?;
+    code_builder.push_str(&builtin);
+    Ok(())
 }
 
 pub fn deinit_builtin_scope(scope: &mut Scope) -> Result<(), IrError> {

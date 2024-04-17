@@ -7,7 +7,7 @@ use compiler::syntax::parser::Parser;
 pub mod compiler;
 
 fn main() {
-    let Ok(code) = fs::read_to_string("test.txt") else {
+    let Ok(code) = fs::read_to_string("test.katas") else {
         panic!("encountering fatal error when reading file");
     };
 
