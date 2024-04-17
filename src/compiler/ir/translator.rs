@@ -205,7 +205,7 @@ impl Translator {
 define i32 @main() {{
     %main_return = call i32 @{main_id}()
     ret i32 %main_return
-}}
+}}\
             "
         );
         Ok(template)
@@ -214,7 +214,7 @@ define i32 @main() {{
     /// # Errors
     pub fn translate(&mut self, program: Program) -> Result<String, IrError> {
         let mut llvm_code = String::new();
-        init_builtin_scope(&mut self.scope, &mut llvm_code);
+        init_builtin_scope(&mut self.scope, &mut llvm_code)?;
         self.scope.enter(Tag::Global);
         let user_program = self.translate_program(program)?.to_string();
         llvm_code.push_str(&user_program);
