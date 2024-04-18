@@ -1,3 +1,5 @@
+use crate::compiler::syntax::ast::Type;
+
 use super::scope::Tag;
 
 #[derive(Debug)]
@@ -8,14 +10,11 @@ pub struct IrError {
 #[derive(Debug)]
 pub enum IrErrorKind {
     NullScope,
-    ScopeMismatch {
-        expected: Tag,
-        encountered: Tag,
-    },
+    ScopeMismatch { expected: Tag, encountered: Tag },
     DuplicateIdentifierInSameScope,
 
     UndefinedMain,
-    UndeclaredIdentifier,
+    UndeclaredIdentifier(String),
 
     MissingDefinition,
     MissingEmpty,
@@ -23,6 +22,8 @@ pub enum IrErrorKind {
     MissingExpression,
     MissingReturn,
     MissingLet,
+    UnknownType(Type),
+    MismatchedType,
 
     BuiltinFileNotExist,
 }

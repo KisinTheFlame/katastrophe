@@ -1,7 +1,7 @@
 use super::{
     ast::{
         BinaryOperator, Expression, FunctionPrototype, Operator, Parameter, Program, Statement,
-        UnaryOperator,
+        Type, UnaryOperator,
     },
     err::{ParseError, ParseErrorKind},
     lexer::Lexer,
@@ -312,11 +312,27 @@ impl Parser {
         Ok(parameters)
     }
 
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        let type_name = self.parse_plain_identifier()?;
+        Type::try_from(type_name)
+    }
+
+    fn parse_function_return_type(&mut self) -> Result<Type, ParseError> {
+        if self.expect_symbol(&Symbol::Arrow) {
+            self.parse_type()
+        } else {
+            Ok(Type::Void)
+        }
+    }
+
     fn parse_function_prototype(&mut self) -> Result<FunctionPrototype, ParseError> {
         let identifier = self.parse_plain_identifier()?;
+        let parameters = self.parse_function_parameters()?;
+        let return_type = self.parse_function_return_type()?;
         Ok(FunctionPrototype {
             identifier,
-            parameters: self.parse_function_parameters()?,
+            parameters,
+            return_type,
         })
     }
 

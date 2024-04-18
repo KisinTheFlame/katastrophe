@@ -1,3 +1,25 @@
+use super::err::{ParseError, ParseErrorKind};
+
+#[derive(Debug)]
+pub enum Type {
+    Void,
+    I32,
+}
+
+impl TryFrom<String> for Type {
+    type Error = ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "void" => Ok(Type::Void),
+            "i32" => Ok(Type::I32),
+            _ => Err(ParseError {
+                kind: ParseErrorKind::UnknownType(value),
+            }),
+        }
+    }
+}
+
 pub trait Operator {
     /// (unary) - ! ~ : 14 right
     /// * / : 13 left
@@ -107,9 +129,15 @@ pub enum Expression {
 }
 
 #[derive(Debug)]
+pub struct Parameter {
+    pub identifier: String,
+}
+
+#[derive(Debug)]
 pub struct FunctionPrototype {
     pub identifier: String,
     pub parameters: Vec<Parameter>,
+    pub return_type: Type,
 }
 
 #[derive(Debug)]
@@ -128,11 +156,6 @@ pub enum Statement {
         prototype: FunctionPrototype,
         body: Box<Statement>,
     },
-}
-
-#[derive(Debug)]
-pub struct Parameter {
-    pub identifier: String,
 }
 
 #[derive(Debug)]

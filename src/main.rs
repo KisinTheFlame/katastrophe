@@ -14,9 +14,7 @@ fn main() {
     let mut parser = Parser::new(code.as_str());
     let program = match parser.parse_program() {
         Ok(program) => program,
-        Err(e) => {
-            panic!("{e:?}");
-        }
+        Err(e) => e.report_and_panic(),
     };
     let mut translator = Translator::new();
     match translator.translate(program) {
