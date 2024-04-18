@@ -5,7 +5,7 @@ use crate::compiler::syntax::ast::{
 use super::{
     builtin::{deinit_builtin_scope, init_builtin_scope},
     err::{IrError, IrErrorKind},
-    instruction::{DataType, Instruction, Value},
+    instruction::{BinaryOperation, DataType, Instruction, Value},
     scope::{Scope, Tag},
 };
 
@@ -36,6 +36,62 @@ impl Translator {
         Ok(Instruction::Batch(instructions))
     }
 
+    fn translate_binary_expression(
+        &mut self,
+        operator: &BinaryOperator,
+        left: Expression,
+        right: Expression,
+    ) -> Result<(Instruction, u32), IrError> {
+        let (left_instruction, left_id) = self.translate_expression(left)?;
+        let left = Value::Register(left_id);
+        let (right_instruction, right_id) = self.translate_expression(right)?;
+        let right = Value::Register(right_id);
+        let result_id = self.scope.declare_anonymous();
+        let result = Value::Register(result_id);
+
+        let operation = match operator {
+            BinaryOperator::Add => Instruction::Binary {
+                operator: BinaryOperation::Add,
+                result,
+                left,
+                right,
+            },
+            BinaryOperator::Subtract => Instruction::Binary {
+                operator: BinaryOperation::Subtract,
+                result,
+                left,
+                right,
+            },
+            BinaryOperator::Multiply => Instruction::Binary {
+                operator: BinaryOperation::Multiply,
+                result,
+                left,
+                right,
+            },
+            BinaryOperator::Divide => Instruction::Binary {
+                operator: BinaryOperation::DivideSigned,
+                result,
+                left,
+                right,
+            },
+            BinaryOperator::LogicalAnd => todo!(),
+            BinaryOperator::LogicalOr => todo!(),
+            BinaryOperator::BitAnd => todo!(),
+            BinaryOperator::BitOr => todo!(),
+            BinaryOperator::Equal => todo!(),
+            BinaryOperator::NotEqual => todo!(),
+            BinaryOperator::LessThan => todo!(),
+            BinaryOperator::LessThanEqual => todo!(),
+            BinaryOperator::GreaterThan => todo!(),
+            BinaryOperator::GreaterThanEqual => todo!(),
+        };
+
+        Ok((
+            Instruction::Batch(vec![left_instruction, right_instruction, operation]),
+            result_id,
+        ))
+    }
+
     fn translate_expression(
         &mut self,
         expression: Expression,
@@ -49,37 +105,25 @@ impl Translator {
             ),
             Expression::IntLiteral(literal) => {
                 let symbol = &format!("{literal}");
-                let expression_id = if self.scope.exist_symbol(symbol)? {
-                    self.scope.lookup_symbol(symbol)?.unwrap()
+                if self.scope.exist_symbol(symbol)? {
+                    let expression_id = self.scope.lookup_symbol(symbol)?.unwrap();
+                    Ok((Instruction::NoOperation, expression_id))
                 } else {
-                    self.scope.declare_symbol(symbol)?
-                };
-                Ok((
-                    Instruction::Bitcast {
-                        from: Value::Immediate(literal),
-                        to: Value::Register(expression_id),
-                    },
-                    expression_id,
-                ))
+                    let expression_id = self.scope.declare_symbol(symbol)?;
+                    Ok((
+                        Instruction::Bitcast {
+                            from: Value::Immediate(literal),
+                            to: Value::Register(expression_id),
+                        },
+                        expression_id,
+                    ))
+                }
             }
             Expression::FloatLiteral(_) => todo!(),
             Expression::Unary(_, _) => todo!(),
-            Expression::Binary(operator, _, _) => match operator {
-                BinaryOperator::Add => todo!(),
-                BinaryOperator::Subtract => todo!(),
-                BinaryOperator::Multiply => todo!(),
-                BinaryOperator::Divide => todo!(),
-                BinaryOperator::LogicalAnd => todo!(),
-                BinaryOperator::LogicalOr => todo!(),
-                BinaryOperator::BitAnd => todo!(),
-                BinaryOperator::BitOr => todo!(),
-                BinaryOperator::Equal => todo!(),
-                BinaryOperator::NotEqual => todo!(),
-                BinaryOperator::LessThan => todo!(),
-                BinaryOperator::LessThanEqual => todo!(),
-                BinaryOperator::GreaterThan => todo!(),
-                BinaryOperator::GreaterThanEqual => todo!(),
-            },
+            Expression::Binary(operator, left, right) => {
+                self.translate_binary_expression(&operator, *left, *right)
+            }
             Expression::Call(_, _) => todo!(),
         }
     }

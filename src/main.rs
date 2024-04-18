@@ -25,12 +25,16 @@ fn main() {
             panic!("{e:?}")
         }
     };
-    Command::new("clang")
+    let link_result = Command::new("clang")
         .arg("test.ll")
         .arg("-o")
         .arg("test")
         .output()
         .expect("failed to compile llvm ir.");
+    if !link_result.status.success() {
+        let error = String::from_utf8(link_result.stderr).expect("failed to read stderr");
+        panic!("{error}");
+    }
     let status = Command::new("./test")
         .output()
         .expect("failed to execute.")

@@ -34,6 +34,24 @@ pub struct Parameter {
     // id: u32,
 }
 
+pub enum BinaryOperation {
+    Add,
+    Subtract,
+    Multiply,
+    DivideSigned,
+}
+
+impl fmt::Display for BinaryOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryOperation::Add => write!(f, "add"),
+            BinaryOperation::Subtract => write!(f, "sub"),
+            BinaryOperation::Multiply => write!(f, "mul"),
+            BinaryOperation::DivideSigned => write!(f, "sdiv"),
+        }
+    }
+}
+
 pub enum Instruction {
     NoOperation,
     Global {
@@ -55,6 +73,12 @@ pub enum Instruction {
     Bitcast {
         from: Value,
         to: Value,
+    },
+    Binary {
+        operator: BinaryOperation,
+        result: Value,
+        left: Value,
+        right: Value,
     },
 }
 
@@ -92,6 +116,9 @@ impl Instruction {
             }
             Instruction::Bitcast { from, to } => {
                 writeln!(f, "{indentation}{to} = bitcast i32 {from} to i32")
+            }
+            Instruction::Binary { operator, result, left, right } => {
+                writeln!(f, "{indentation}{result} = {operator} i32 {left}, {right}")
             }
         }
     }

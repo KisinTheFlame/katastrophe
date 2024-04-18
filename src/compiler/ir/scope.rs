@@ -63,6 +63,10 @@ impl Scope {
         Ok(())
     }
 
+    pub fn declare_anonymous(&self) -> u32 {
+        next_id()
+    }
+
     pub fn declare_symbol(&mut self, symbol: &String) -> Result<u32, IrError> {
         self.current_layer.as_mut().map_or(
             Err(IrError {
