@@ -88,7 +88,7 @@ impl Lexer {
                 }
                 break;
             }
-            if !matches!(c, 'a'..='z' | 'A'..='Z' | '_') {
+            if !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_') {
                 break;
             }
             identifier.push(c);
