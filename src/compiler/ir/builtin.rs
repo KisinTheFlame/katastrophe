@@ -8,8 +8,8 @@ pub fn init_builtin_scope(scope: &mut Scope, code_builder: &mut String) {
     code_builder.push_str(
         "
 declare i32 @exit(i32)
-declare i32 getchar()
-declare i32 putchar(i32)
+declare i32 @getchar()
+declare i32 @putchar(i32)
 ",
     );
 }
