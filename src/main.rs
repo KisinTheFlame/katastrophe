@@ -26,6 +26,8 @@ fn main() {
         }
     };
     let link_result = Command::new("clang")
+        .arg("-mllvm")
+        .arg("-opaque-pointers")
         .arg("test.ll")
         .arg("-o")
         .arg("test")

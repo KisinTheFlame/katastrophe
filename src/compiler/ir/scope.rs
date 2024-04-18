@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::{
     err::{IrError, IrErrorKind},
     id_generator::next_id,
+    instruction::Value,
 };
 
 #[derive(Debug)]
@@ -63,45 +64,68 @@ impl Scope {
         Ok(())
     }
 
-    pub fn declare_anonymous(&self) -> u32 {
-        next_id()
+    pub fn declare_anonymous(&self) -> Value {
+        let id = next_id();
+        Value::Register(format!("t{id}"))
     }
 
-    pub fn declare_symbol(&mut self, symbol: &String) -> Result<u32, IrError> {
+    // pub fn declare_immutable(&mut self, symbol: &String) -> Result<Value, IrError> {
+    //     self.declare(symbol, Value::Register(next_id()))
+    // }
+
+    pub fn declare_mutable(&mut self, symbol: &String) -> Result<Value, IrError> {
+        let id = next_id();
+        self.declare(symbol, Value::StackPointer(format!("v{id}.{symbol}")))
+    }
+
+    pub fn declare_global(&mut self, symbol: &String) -> Result<Value, IrError> {
+        let id = next_id();
+        self.declare(symbol, Value::GlobalPointer(format!("g{id}.{symbol}")))
+    }
+
+    pub fn declare_function(&mut self, symbol: &String) -> Result<Value, IrError> {
+        let id = next_id();
+        self.declare(symbol, Value::Function(format!("f{id}.{symbol}")))
+    }
+
+    fn declare(&mut self, symbol: &String, value: Value) -> Result<Value, IrError> {
         self.current_layer.as_mut().map_or(
             Err(IrError {
                 kind: IrErrorKind::NullScope,
             }),
-            |layer| layer.declare_symbol(symbol),
+            |layer| {
+                layer.declare(symbol, &value)?;
+                Ok(value)
+            },
         )
     }
 
-    pub fn lookup_symbol(&self, symbol: &String) -> Result<Option<u32>, IrError> {
+    pub fn lookup_symbol(&self, symbol: &String) -> Result<Option<Value>, IrError> {
         self.current_layer.as_ref().map_or(
             Err(IrError {
                 kind: IrErrorKind::NullScope,
             }),
-            |layer| Ok(layer.lookup_symbol(symbol)),
+            |layer| Ok(layer.lookup(symbol)),
         )
     }
 
-    pub fn exist_symbol(&self, symbol: &String) -> Result<bool, IrError> {
-        Ok(self.lookup_symbol(symbol)?.is_some())
-    }
-
-    // pub fn is_global(&self) -> Result<bool, IrError> {
-    //     self.current_layer.as_ref().map_or(
-    //         Err(IrError {
-    //             kind: IrErrorKind::NullScope,
-    //         }),
-    //         |layer| Ok(layer.tag == ScopeTag::Global),
-    //     )
+    // pub fn exist_symbol(&self, symbol: &String) -> Result<bool, IrError> {
+    //     Ok(self.lookup_symbol(symbol)?.is_some())
     // }
+
+    pub fn is_global(&self) -> Result<bool, IrError> {
+        self.current_layer.as_ref().map_or(
+            Err(IrError {
+                kind: IrErrorKind::NullScope,
+            }),
+            |layer| Ok(layer.tag == Tag::Global),
+        )
+    }
 }
 
 struct ScopeLayer {
     tag: Tag,
-    symbol_table: HashMap<String, u32>,
+    symbol_table: HashMap<String, Value>,
     outer: LayerLink,
 }
 
@@ -114,25 +138,24 @@ impl ScopeLayer {
         }
     }
 
-    pub fn declare_symbol(&mut self, symbol: &String) -> Result<u32, IrError> {
+    pub fn declare(&mut self, symbol: &String, value: &Value) -> Result<(), IrError> {
         if self.symbol_table.contains_key(symbol) {
             return Err(IrError {
                 kind: IrErrorKind::DuplicateIdentifierInSameScope,
             });
         }
-        let id = next_id();
-        self.symbol_table.insert(symbol.clone(), id);
-        Ok(id)
+        self.symbol_table.insert(symbol.clone(), value.clone());
+        Ok(())
     }
 
-    pub fn lookup_symbol(&self, symbol: &String) -> Option<u32> {
+    pub fn lookup(&self, symbol: &String) -> Option<Value> {
         let result = self.symbol_table.get(symbol);
         if result.is_some() {
-            return result.copied();
+            return result.cloned();
         }
         match self.outer.as_ref() {
             None => None,
-            Some(outer) => outer.lookup_symbol(symbol),
+            Some(outer) => outer.lookup(symbol),
         }
     }
 }
