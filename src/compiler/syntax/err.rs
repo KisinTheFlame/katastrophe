@@ -47,6 +47,8 @@ pub enum ParseErrorKind {
 
     UnexpectedEOF,
     UnexpectedToken(Token),
+
+    UnknownType(String),
 }
 
 #[derive(Debug)]
@@ -70,6 +72,9 @@ impl ParseError {
             ParseErrorKind::UnexpectedEOF => "encountering unexpected EOF".to_string(),
             ParseErrorKind::UnexpectedToken(ref token) => {
                 format!("encountering unexpected token: {token:?}")
+            }
+            ParseErrorKind::UnknownType(ref unknown_type) => {
+                format!("encountering unknown type: {unknown_type}")
             }
         };
         panic!("{message}")

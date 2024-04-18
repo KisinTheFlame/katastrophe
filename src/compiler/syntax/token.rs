@@ -70,6 +70,8 @@ pub enum Symbol {
 
     Comma,
     Semicolon,
+
+    Arrow,
 }
 
 #[derive(Debug, Clone, PartialEq)]

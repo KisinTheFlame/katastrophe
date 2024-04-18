@@ -1,15 +1,40 @@
 use std::fmt;
 
-pub enum DataType {
+use crate::compiler::syntax::ast::Type;
+
+use super::err::IrError;
+
+#[derive(Clone)]
+pub enum IrType {
     Void,
     I32,
+    Function {
+        return_type: Box<IrType>,
+        parameter_types: Vec<IrType>,
+    },
 }
 
-impl fmt::Display for DataType {
+impl TryFrom<Type> for IrType {
+    type Error = IrError;
+
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        let result = match value {
+            Type::Void => IrType::Void,
+            Type::I32 => IrType::I32,
+        };
+        Ok(result)
+    }
+}
+
+impl fmt::Display for IrType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            DataType::Void => "void",
-            DataType::I32 => "i32",
+            IrType::Void => "void",
+            IrType::I32 => "i32",
+            IrType::Function {
+                return_type: _,
+                parameter_types: _,
+            } => return Err(fmt::Error),
         };
         write!(f, "{s}")
     }
@@ -21,38 +46,41 @@ pub enum Value {
     Immediate(i32),
     StackPointer(String),
     GlobalPointer(String),
+    Parameter(String),
     Function(String),
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Register(id) | Value::StackPointer(id) => write!(f, "%{id}"),
+            Value::Register(id) | Value::StackPointer(id) | Value::Parameter(id) => {
+                write!(f, "%{id}")
+            }
             Value::Immediate(value) => write!(f, "{value}"),
             Value::GlobalPointer(id) | Value::Function(id) => write!(f, "@{id}"),
         }
     }
 }
 
-pub struct Parameter {
-    // data_type: DataType,
-    // id: u32,
+pub struct IrFunctionPrototype {
+    pub function_type: IrType,
+    pub id: Value,
 }
 
-pub enum BinaryOperation {
+pub enum IrBinaryOpcode {
     Add,
     Subtract,
     Multiply,
     DivideSigned,
 }
 
-impl fmt::Display for BinaryOperation {
+impl fmt::Display for IrBinaryOpcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BinaryOperation::Add => write!(f, "add"),
-            BinaryOperation::Subtract => write!(f, "sub"),
-            BinaryOperation::Multiply => write!(f, "mul"),
-            BinaryOperation::DivideSigned => write!(f, "sdiv"),
+            IrBinaryOpcode::Add => write!(f, "add"),
+            IrBinaryOpcode::Subtract => write!(f, "sub"),
+            IrBinaryOpcode::Multiply => write!(f, "mul"),
+            IrBinaryOpcode::DivideSigned => write!(f, "sdiv"),
         }
     }
 }
@@ -61,26 +89,21 @@ pub enum Instruction {
     NoOperation,
     Global {
         lvalue: Value,
-        data_type: DataType,
+        data_type: IrType,
         value: Value,
     },
     Return {
-        data_type: DataType,
+        data_type: IrType,
         value: Value,
     },
     Batch(Vec<Instruction>),
-    Function {
-        return_type: DataType,
-        id: Value,
-        parameters: Vec<Parameter>,
-        body: Box<Instruction>,
-    },
+    Definition(IrFunctionPrototype, Vec<Value>, Box<Instruction>),
     Bitcast {
         from: Value,
         to: Value,
     },
     Binary {
-        operator: BinaryOperation,
+        operator: IrBinaryOpcode,
         result: Value,
         left: Value,
         right: Value,
@@ -93,6 +116,11 @@ pub enum Instruction {
     Store {
         from: Value,
         to: Value,
+    },
+    Call {
+        receiver: Option<Value>,
+        function: IrFunctionPrototype,
+        arguments: Vec<Value>,
     },
 }
 
@@ -117,15 +145,29 @@ impl Instruction {
                 }
                 Ok(())
             }
-            Instruction::Function {
-                return_type,
-                id,
-                parameters: _,
+            Instruction::Definition(
+                IrFunctionPrototype { function_type, id },
+                parameters,
                 body,
-            } => {
-                writeln!(f, "{indentation}define {return_type} {id}() {{")?;
+            ) => {
+                let IrType::Function {
+                    return_type,
+                    parameter_types,
+                } = function_type
+                else {
+                    return Err(fmt::Error);
+                };
+
+                let parameters = parameter_types
+                    .iter()
+                    .zip(parameters)
+                    .map(|(param_type, param)| format!("{param_type} {param}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(f, "{indentation}define {return_type} {id}({parameters}) {{")?;
                 body.gracefully_format(f, indentation_num + 1)?;
                 writeln!(f, "{indentation}}}")?;
+                writeln!(f)?;
                 Ok(())
             }
             Instruction::Bitcast { from, to } => {
@@ -147,6 +189,34 @@ impl Instruction {
             }
             Instruction::Store { from, to } => {
                 writeln!(f, "{indentation}store i32 {from}, ptr {to}")
+            }
+            Instruction::Call {
+                receiver,
+                function,
+                arguments,
+            } => {
+                let receiver = receiver
+                    .as_ref()
+                    .map_or(String::new(), |receiver| format!("{receiver} = "));
+                let function_type = &function.function_type;
+                let IrType::Function {
+                    return_type,
+                    parameter_types: parameter_type,
+                } = function_type
+                else {
+                    return Err(fmt::Error);
+                };
+                let id = &function.id;
+                let arguments = arguments
+                    .iter()
+                    .zip(parameter_type.iter())
+                    .map(|(argument, parameter_type)| format!("{parameter_type} {argument}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(
+                    f,
+                    "{indentation}{receiver}call {return_type} {id}({arguments})"
+                )
             }
         }
     }

@@ -107,57 +107,67 @@ impl Lexer {
         Ok(token)
     }
 
+    fn expect(&mut self, expected: char) -> bool {
+        if let Some(c) = self.reader.peek() {
+            if c == expected {
+                self.reader.forward();
+                return true;
+            }
+        }
+        false
+    }
+
     fn digest_symbol(&mut self) -> Result<Token, LexError> {
         if let Some(c) = self.reader.peek() {
             self.reader.forward();
             let symbol = match c {
                 '+' => Symbol::Add,
-                '-' => Symbol::Subtract,
+                '-' => {
+                    if self.expect('>') {
+                        Symbol::Arrow
+                    } else {
+                        Symbol::Subtract
+                    }
+                }
                 '*' => Symbol::Multiply,
                 '/' => Symbol::Divide,
                 '=' => {
-                    if let Some('=') = self.reader.peek() {
-                        self.reader.forward();
+                    if self.expect('=') {
                         Symbol::Equal
                     } else {
                         Symbol::Assign
                     }
                 }
                 '!' => {
-                    if let Some('=') = self.reader.peek() {
-                        self.reader.forward();
+                    if self.expect('=') {
                         Symbol::NotEqual
                     } else {
                         Symbol::LogicalNot
                     }
                 }
                 '<' => {
-                    if let Some('=') = self.reader.peek() {
-                        self.reader.forward();
+                    if self.expect('=') {
                         Symbol::LessThanEqual
                     } else {
                         Symbol::LessThan
                     }
                 }
                 '>' => {
-                    if let Some('=') = self.reader.peek() {
-                        self.reader.forward();
+                    if self.expect('=') {
                         Symbol::GreaterThanEqual
                     } else {
                         Symbol::GreaterThan
                     }
                 }
                 '&' => {
-                    if let Some('&') = self.reader.peek() {
-                        self.reader.forward();
+                    if self.expect('&') {
                         Symbol::LogicalAnd
                     } else {
                         Symbol::BitAnd
                     }
                 }
                 '|' => {
-                    if let Some('|') = self.reader.peek() {
-                        self.reader.forward();
+                    if self.expect('|') {
                         Symbol::LogicalOr
                     } else {
                         Symbol::BitOr

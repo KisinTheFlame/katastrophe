@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::{
     err::{IrError, IrErrorKind},
     id_generator::next_id,
-    instruction::Value,
+    instruction::{IrType, Value},
 };
 
 #[derive(Debug)]
@@ -73,34 +73,76 @@ impl Scope {
     //     self.declare(symbol, Value::Register(next_id()))
     // }
 
-    pub fn declare_mutable(&mut self, symbol: &String) -> Result<Value, IrError> {
+    pub fn declare_parameter(
+        &mut self,
+        symbol: &String,
+        data_type: &IrType,
+    ) -> Result<Value, IrError> {
         let id = next_id();
-        self.declare(symbol, Value::StackPointer(format!("v{id}.{symbol}")))
+        self.declare(
+            symbol,
+            data_type,
+            Value::Parameter(format!("p{id}.{symbol}")),
+        )
     }
 
-    pub fn declare_global(&mut self, symbol: &String) -> Result<Value, IrError> {
+    pub fn declare_mutable(
+        &mut self,
+        symbol: &String,
+        data_type: &IrType,
+    ) -> Result<Value, IrError> {
         let id = next_id();
-        self.declare(symbol, Value::GlobalPointer(format!("g{id}.{symbol}")))
+        self.declare(
+            symbol,
+            data_type,
+            Value::StackPointer(format!("v{id}.{symbol}")),
+        )
     }
 
-    pub fn declare_function(&mut self, symbol: &String) -> Result<Value, IrError> {
+    pub fn declare_global(
+        &mut self,
+        symbol: &String,
+        data_type: &IrType,
+    ) -> Result<Value, IrError> {
         let id = next_id();
-        self.declare(symbol, Value::Function(format!("f{id}.{symbol}")))
+        self.declare(
+            symbol,
+            data_type,
+            Value::GlobalPointer(format!("g{id}.{symbol}")),
+        )
     }
 
-    fn declare(&mut self, symbol: &String, value: Value) -> Result<Value, IrError> {
+    pub fn declare_function(
+        &mut self,
+        symbol: &String,
+        data_type: &IrType,
+    ) -> Result<Value, IrError> {
+        let id = next_id();
+        self.declare(
+            symbol,
+            data_type,
+            Value::Function(format!("f{id}.{symbol}")),
+        )
+    }
+
+    fn declare(
+        &mut self,
+        symbol: &String,
+        data_type: &IrType,
+        value: Value,
+    ) -> Result<Value, IrError> {
         self.current_layer.as_mut().map_or(
             Err(IrError {
                 kind: IrErrorKind::NullScope,
             }),
             |layer| {
-                layer.declare(symbol, &value)?;
+                layer.declare(symbol, data_type, &value)?;
                 Ok(value)
             },
         )
     }
 
-    pub fn lookup_symbol(&self, symbol: &String) -> Result<Option<Value>, IrError> {
+    pub fn lookup_symbol(&self, symbol: &String) -> Result<Option<(Value, IrType)>, IrError> {
         self.current_layer.as_ref().map_or(
             Err(IrError {
                 kind: IrErrorKind::NullScope,
@@ -125,7 +167,7 @@ impl Scope {
 
 struct ScopeLayer {
     tag: Tag,
-    symbol_table: HashMap<String, Value>,
+    symbol_table: HashMap<String, (Value, IrType)>,
     outer: LayerLink,
 }
 
@@ -138,17 +180,23 @@ impl ScopeLayer {
         }
     }
 
-    pub fn declare(&mut self, symbol: &String, value: &Value) -> Result<(), IrError> {
+    pub fn declare(
+        &mut self,
+        symbol: &String,
+        data_type: &IrType,
+        value: &Value,
+    ) -> Result<(), IrError> {
         if self.symbol_table.contains_key(symbol) {
             return Err(IrError {
                 kind: IrErrorKind::DuplicateIdentifierInSameScope,
             });
         }
-        self.symbol_table.insert(symbol.clone(), value.clone());
+        self.symbol_table
+            .insert(symbol.clone(), (value.clone(), data_type.clone()));
         Ok(())
     }
 
-    pub fn lookup(&self, symbol: &String) -> Option<Value> {
+    pub fn lookup(&self, symbol: &String) -> Option<(Value, IrType)> {
         let result = self.symbol_table.get(symbol);
         if result.is_some() {
             return result.cloned();
