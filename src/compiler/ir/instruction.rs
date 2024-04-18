@@ -58,8 +58,9 @@ pub enum Instruction {
     },
 }
 
-impl fmt::Display for Instruction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Instruction {
+    fn gracefully_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
+        let indentation = "    ".repeat(indentation_num);
         match self {
             Instruction::NoOperation => Ok(()),
             Instruction::Global {
@@ -67,15 +68,14 @@ impl fmt::Display for Instruction {
                 data_type,
                 value,
             } => {
-                write!(f, "@{id} = global {data_type} {value}")
+                writeln!(f, "{indentation}@{id} = global {data_type} {value}")
             }
             Instruction::Return { data_type, value } => {
-                write!(f, "ret {data_type} {value}")
+                writeln!(f, "{indentation}ret {data_type} {value}")
             }
             Instruction::Batch(instructions) => {
                 for instruction in instructions {
-                    instruction.fmt(f)?;
-                    writeln!(f)?;
+                    instruction.gracefully_format(f, indentation_num)?;
                 }
                 Ok(())
             }
@@ -85,12 +85,20 @@ impl fmt::Display for Instruction {
                 parameters: _,
                 body,
             } => {
-                writeln!(f, "define {return_type} @{id}() {{")?;
-                body.fmt(f)?;
-                write!(f, "}}")?;
+                writeln!(f, "{indentation}define {return_type} @{id}() {{")?;
+                body.gracefully_format(f, indentation_num + 1)?;
+                writeln!(f, "{indentation}}}")?;
                 Ok(())
             }
-            Instruction::Bitcast { from, to } => write!(f, "{to} = bitcast i32 {from} to i32"),
+            Instruction::Bitcast { from, to } => {
+                writeln!(f, "{indentation}{to} = bitcast i32 {from} to i32")
+            }
         }
+    }
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.gracefully_format(f, 0)
     }
 }
