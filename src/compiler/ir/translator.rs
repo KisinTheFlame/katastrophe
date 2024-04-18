@@ -41,36 +41,33 @@ impl Translator {
         operator: &BinaryOperator,
         left: Expression,
         right: Expression,
-    ) -> Result<(Instruction, u32), IrError> {
-        let (left_instruction, left_id) = self.translate_expression(left)?;
-        let left = Value::Register(left_id);
-        let (right_instruction, right_id) = self.translate_expression(right)?;
-        let right = Value::Register(right_id);
-        let result_id = self.scope.declare_anonymous();
-        let result = Value::Register(result_id);
+    ) -> Result<(Instruction, Value), IrError> {
+        let (left_instruction, left) = self.translate_expression(left)?;
+        let (right_instruction, right) = self.translate_expression(right)?;
+        let result = self.scope.declare_anonymous();
 
         let operation = match operator {
             BinaryOperator::Add => Instruction::Binary {
                 operator: BinaryOperation::Add,
-                result,
+                result: result.clone(),
                 left,
                 right,
             },
             BinaryOperator::Subtract => Instruction::Binary {
                 operator: BinaryOperation::Subtract,
-                result,
+                result: result.clone(),
                 left,
                 right,
             },
             BinaryOperator::Multiply => Instruction::Binary {
                 operator: BinaryOperation::Multiply,
-                result,
+                result: result.clone(),
                 left,
                 right,
             },
             BinaryOperator::Divide => Instruction::Binary {
                 operator: BinaryOperation::DivideSigned,
-                result,
+                result: result.clone(),
                 left,
                 right,
             },
@@ -88,36 +85,44 @@ impl Translator {
 
         Ok((
             Instruction::Batch(vec![left_instruction, right_instruction, operation]),
-            result_id,
+            result,
         ))
     }
 
     fn translate_expression(
         &mut self,
         expression: Expression,
-    ) -> Result<(Instruction, u32), IrError> {
+    ) -> Result<(Instruction, Value), IrError> {
         match expression {
             Expression::Identifier(identifier) => self.scope.lookup_symbol(&identifier)?.map_or(
                 Err(IrError {
                     kind: IrErrorKind::UndeclaredIdentifier,
                 }),
-                |id| Ok((Instruction::NoOperation, id)),
+                |pointer| {
+                    let result = self.scope.declare_anonymous();
+                    let instruction = Instruction::Load {
+                        from: pointer,
+                        to: result.clone(),
+                    };
+                    Ok((instruction, result))
+                },
             ),
             Expression::IntLiteral(literal) => {
-                let symbol = &format!("{literal}");
-                if self.scope.exist_symbol(symbol)? {
-                    let expression_id = self.scope.lookup_symbol(symbol)?.unwrap();
-                    Ok((Instruction::NoOperation, expression_id))
-                } else {
-                    let expression_id = self.scope.declare_symbol(symbol)?;
-                    Ok((
-                        Instruction::Bitcast {
-                            from: Value::Immediate(literal),
-                            to: Value::Register(expression_id),
-                        },
-                        expression_id,
-                    ))
-                }
+                // let symbol = &format!("{literal}");
+                // // if self.scope.exist_symbol(symbol)? {
+                // //     let expression = self.scope.lookup_symbol(symbol)?.unwrap();
+                // //     Ok((Instruction::NoOperation, expression))
+                // // } else {
+                // //     let expression = self.scope.declare_immutable(symbol)?;
+                // //     Ok((
+                // //         Instruction::Bitcast {
+                // //             from: Value::Immediate(literal),
+                // //             to: expression,
+                // //         },
+                // //         expression,
+                // //     ))
+                // // }
+                Ok((Instruction::NoOperation, Value::Immediate(literal)))
             }
             Expression::FloatLiteral(_) => todo!(),
             Expression::Unary(_, _) => todo!(),
@@ -155,11 +160,23 @@ impl Translator {
                 kind: IrErrorKind::MissingLet,
             });
         };
-        let (expression_instructions, expression_id) = self.translate_expression(expression)?;
-        let lvalue_id = self.scope.declare_symbol(&identifier)?;
-        let assign_instruction = Instruction::Bitcast {
-            from: Value::Register(expression_id),
-            to: Value::Register(lvalue_id),
+        let (expression_instructions, expression) = self.translate_expression(expression)?;
+        let assign_instruction = if self.scope.is_global()? {
+            let lvalue = self.scope.declare_global(&identifier)?;
+            Instruction::Global {
+                lvalue,
+                data_type: DataType::I32,
+                value: expression,
+            }
+        } else {
+            let lvalue = self.scope.declare_mutable(&identifier)?;
+            Instruction::Batch(vec![
+                Instruction::Allocate(lvalue.clone()),
+                Instruction::Store {
+                    from: expression,
+                    to: lvalue,
+                },
+            ])
         };
         let instructions = vec![expression_instructions, assign_instruction];
         Ok(Instruction::Batch(instructions))
@@ -171,12 +188,12 @@ impl Translator {
                 kind: IrErrorKind::MissingReturn,
             });
         };
-        let (expression_instructions, expression_id) = self.translate_expression(expression)?;
+        let (expression_instructions, expression) = self.translate_expression(expression)?;
         let instructions = vec![
             expression_instructions,
             Instruction::Return {
                 data_type: DataType::I32,
-                value: Value::Register(expression_id),
+                value: expression,
             },
         ];
         Ok(Instruction::Batch(instructions))
@@ -197,7 +214,7 @@ impl Translator {
                 kind: IrErrorKind::MissingDefinition,
             });
         };
-        let function_id = self.scope.declare_symbol(&identifier)?;
+        let function = self.scope.declare_function(&identifier)?;
         let tag_name = format!("function {identifier}");
         self.scope.enter(Tag::Dynamic(tag_name.clone()));
         let body = self.translate_statement(*body)?;
@@ -205,7 +222,7 @@ impl Translator {
         self.scope.leave(Tag::Dynamic(tag_name.clone()))?;
         Ok(Instruction::Function {
             return_type: DataType::I32,
-            id: function_id,
+            id: function,
             parameters: Vec::new(),
             body,
         })
@@ -247,7 +264,7 @@ impl Translator {
         let template = format!(
             "
 define i32 @main() {{
-    %main_return = call i32 @{main_id}()
+    %main_return = call i32 {main_id}()
     ret i32 %main_return
 }}\
             "

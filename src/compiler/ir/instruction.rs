@@ -15,16 +15,21 @@ impl fmt::Display for DataType {
     }
 }
 
+#[derive(Clone)]
 pub enum Value {
-    Register(u32),
+    Register(String),
     Immediate(i32),
+    StackPointer(String),
+    GlobalPointer(String),
+    Function(String),
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Register(id) => write!(f, "%{id}"),
+            Value::Register(id) | Value::StackPointer(id) => write!(f, "%{id}"),
             Value::Immediate(value) => write!(f, "{value}"),
+            Value::GlobalPointer(id) | Value::Function(id) => write!(f, "@{id}"),
         }
     }
 }
@@ -55,7 +60,7 @@ impl fmt::Display for BinaryOperation {
 pub enum Instruction {
     NoOperation,
     Global {
-        id: u32,
+        lvalue: Value,
         data_type: DataType,
         value: Value,
     },
@@ -66,7 +71,7 @@ pub enum Instruction {
     Batch(Vec<Instruction>),
     Function {
         return_type: DataType,
-        id: u32,
+        id: Value,
         parameters: Vec<Parameter>,
         body: Box<Instruction>,
     },
@@ -80,6 +85,15 @@ pub enum Instruction {
         left: Value,
         right: Value,
     },
+    Allocate(Value),
+    Load {
+        from: Value,
+        to: Value,
+    },
+    Store {
+        from: Value,
+        to: Value,
+    },
 }
 
 impl Instruction {
@@ -88,11 +102,11 @@ impl Instruction {
         match self {
             Instruction::NoOperation => Ok(()),
             Instruction::Global {
-                id,
+                lvalue,
                 data_type,
                 value,
             } => {
-                writeln!(f, "{indentation}@{id} = global {data_type} {value}")
+                writeln!(f, "{indentation}{lvalue} = global {data_type} {value}")
             }
             Instruction::Return { data_type, value } => {
                 writeln!(f, "{indentation}ret {data_type} {value}")
@@ -109,7 +123,7 @@ impl Instruction {
                 parameters: _,
                 body,
             } => {
-                writeln!(f, "{indentation}define {return_type} @{id}() {{")?;
+                writeln!(f, "{indentation}define {return_type} {id}() {{")?;
                 body.gracefully_format(f, indentation_num + 1)?;
                 writeln!(f, "{indentation}}}")?;
                 Ok(())
@@ -117,8 +131,22 @@ impl Instruction {
             Instruction::Bitcast { from, to } => {
                 writeln!(f, "{indentation}{to} = bitcast i32 {from} to i32")
             }
-            Instruction::Binary { operator, result, left, right } => {
+            Instruction::Binary {
+                operator,
+                result,
+                left,
+                right,
+            } => {
                 writeln!(f, "{indentation}{result} = {operator} i32 {left}, {right}")
+            }
+            Instruction::Allocate(pointer) => {
+                writeln!(f, "{indentation}{pointer} = alloca i32")
+            }
+            Instruction::Load { from, to } => {
+                writeln!(f, "{indentation}{to} = load i32, ptr {from}")
+            }
+            Instruction::Store { from, to } => {
+                writeln!(f, "{indentation}store i32 {from}, ptr {to}")
             }
         }
     }
