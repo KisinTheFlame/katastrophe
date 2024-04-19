@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use core::fmt;
+use std::{collections::HashMap, fmt::Display};
 
 use super::{
     err::{IrError, IrErrorKind},
@@ -6,13 +7,34 @@ use super::{
     instruction::{IrType, Value},
 };
 
-#[derive(Debug)]
 pub enum Tag {
     Anonymous,
     Named(&'static str),
     Dynamic(String),
     Global,
     Builtin,
+}
+
+impl Display for Tag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Tag::Anonymous => {
+                write!(f, "(Anonymous)")
+            }
+            Tag::Named(name) => {
+                write!(f, "Named {name}")
+            }
+            Tag::Dynamic(name) => {
+                write!(f, "Dynamic {name}")
+            }
+            Tag::Global => {
+                write!(f, "Global")
+            }
+            Tag::Builtin => {
+                write!(f, "Builtin")
+            }
+        }
+    }
 }
 
 impl PartialEq for Tag {
@@ -188,7 +210,7 @@ impl ScopeLayer {
     ) -> Result<(), IrError> {
         if self.symbol_table.contains_key(symbol) {
             return Err(IrError {
-                kind: IrErrorKind::DuplicateIdentifierInSameScope,
+                kind: IrErrorKind::DuplicateIdentifierInSameScope(symbol.clone()),
             });
         }
         self.symbol_table

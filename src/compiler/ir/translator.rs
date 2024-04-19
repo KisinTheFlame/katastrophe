@@ -5,7 +5,7 @@ use crate::compiler::syntax::ast::{
 use super::{
     builtin::{deinit_builtin_scope, init_builtin_scope},
     err::{IrError, IrErrorKind},
-    instruction::{IrBinaryOpcode, Instruction, IrFunctionPrototype, IrType, Value},
+    instruction::{Instruction, IrBinaryOpcode, IrFunctionPrototype, IrType, Value},
     scope::{Scope, Tag},
 };
 
