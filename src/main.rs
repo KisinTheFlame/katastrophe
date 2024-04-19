@@ -4,7 +4,10 @@ use std::process::Command;
 use compiler::ir::translator::Translator;
 use compiler::syntax::parser::Parser;
 
+use crate::util::reportable_error::ReportableError;
+
 pub mod compiler;
+pub mod util;
 
 fn main() {
     let Ok(code) = fs::read_to_string("test.katas") else {
@@ -14,14 +17,13 @@ fn main() {
     let mut parser = Parser::new(code.as_str());
     let program = match parser.parse_program() {
         Ok(program) => program,
-        Err(e) => e.report_and_panic(),
+        Err(e) => e.report(),
     };
+    fs::write("test.ast", format!("{program}")).expect("failed to write ast.");
     let mut translator = Translator::new();
     match translator.translate(program) {
-        Ok(program) => fs::write("test.ll", program).expect("failed to write llvm ir."),
-        Err(e) => {
-            panic!("{e:?}")
-        }
+        Ok(ir) => fs::write("test.ll", ir).expect("failed to write llvm ir."),
+        Err(e) => e.report(),
     };
     let link_result = Command::new("clang")
         .arg("-mllvm")

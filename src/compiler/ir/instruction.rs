@@ -1,6 +1,9 @@
-use std::fmt;
+use std::fmt::{self, Display};
 
-use crate::compiler::syntax::ast::Type;
+use crate::{
+    compiler::syntax::ast::Type,
+    util::pretty_format::{indent, PrettyFormat},
+};
 
 use super::err::IrError;
 
@@ -26,7 +29,7 @@ impl TryFrom<Type> for IrType {
     }
 }
 
-impl fmt::Display for IrType {
+impl Display for IrType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             IrType::Void => "void",
@@ -50,7 +53,7 @@ pub enum Value {
     Function(String),
 }
 
-impl fmt::Display for Value {
+impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Register(id) | Value::StackPointer(id) | Value::Parameter(id) => {
@@ -74,7 +77,7 @@ pub enum IrBinaryOpcode {
     DivideSigned,
 }
 
-impl fmt::Display for IrBinaryOpcode {
+impl Display for IrBinaryOpcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IrBinaryOpcode::Add => write!(f, "add"),
@@ -124,9 +127,9 @@ pub enum Instruction {
     },
 }
 
-impl Instruction {
-    fn gracefully_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
-        let indentation = "    ".repeat(indentation_num);
+impl PrettyFormat for Instruction {
+    fn pretty_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
+        let indentation = indent(indentation_num);
         match self {
             Instruction::NoOperation => Ok(()),
             Instruction::Global {
@@ -141,7 +144,7 @@ impl Instruction {
             }
             Instruction::Batch(instructions) => {
                 for instruction in instructions {
-                    instruction.gracefully_format(f, indentation_num)?;
+                    instruction.pretty_format(f, indentation_num)?;
                 }
                 Ok(())
             }
@@ -165,7 +168,7 @@ impl Instruction {
                     .collect::<Vec<_>>()
                     .join(", ");
                 writeln!(f, "{indentation}define {return_type} {id}({parameters}) {{")?;
-                body.gracefully_format(f, indentation_num + 1)?;
+                body.pretty_format(f, indentation_num + 1)?;
                 writeln!(f, "{indentation}}}")?;
                 writeln!(f)?;
                 Ok(())
@@ -222,8 +225,8 @@ impl Instruction {
     }
 }
 
-impl fmt::Display for Instruction {
+impl Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.gracefully_format(f, 0)
+        self.pretty_format(f, 0)
     }
 }

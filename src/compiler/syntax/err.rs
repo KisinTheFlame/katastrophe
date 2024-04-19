@@ -1,6 +1,7 @@
+use crate::util::reportable_error::ReportableError;
+
 use super::token::{Keyword, Symbol, Token};
 
-#[derive(Debug)]
 pub enum LexErrorKind {
     Unknown,
     InternalMess(&'static str),
@@ -12,14 +13,12 @@ pub enum LexErrorKind {
     UnexpectedEOF,
 }
 
-#[derive(Debug)]
 pub struct LexError {
     pub kind: LexErrorKind,
 }
 
-impl LexError {
-    /// # Panics
-    pub fn report_and_panic(&self) -> ! {
+impl ReportableError for LexError {
+    fn report(&self) -> ! {
         let message = match self.kind {
             LexErrorKind::Unknown => "encountering unknown error".to_string(),
             LexErrorKind::InternalMess(message) => message.to_string(),
@@ -36,7 +35,6 @@ impl LexError {
     }
 }
 
-#[derive(Debug)]
 pub enum ParseErrorKind {
     Unknown,
     InternalMess(&'static str),
@@ -51,14 +49,12 @@ pub enum ParseErrorKind {
     UnknownType(String),
 }
 
-#[derive(Debug)]
 pub struct ParseError {
     pub kind: ParseErrorKind,
 }
 
-impl ParseError {
-    /// # Panics
-    pub fn report_and_panic(&self) -> ! {
+impl ReportableError for ParseError {
+    fn report(&self) -> ! {
         let message = match self.kind {
             ParseErrorKind::Unknown => "encountering unknown error".to_string(),
             ParseErrorKind::InternalMess(message) => message.to_string(),

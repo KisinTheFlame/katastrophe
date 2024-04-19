@@ -1,3 +1,5 @@
+use crate::util::reportable_error::ReportableError;
+
 use super::{
     err::{LexError, LexErrorKind},
     text::Reader,
@@ -18,7 +20,7 @@ impl Lexer {
         };
         match lexer.pump_token() {
             Ok(()) => lexer,
-            Err(e) => e.report_and_panic(),
+            Err(e) => e.report(),
         }
     }
 
@@ -32,7 +34,7 @@ impl Lexer {
         }
         match self.pump_token() {
             Ok(()) => (),
-            Err(e) => e.report_and_panic(),
+            Err(e) => e.report(),
         }
     }
 

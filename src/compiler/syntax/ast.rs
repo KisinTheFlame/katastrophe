@@ -1,9 +1,23 @@
+use core::fmt;
+use std::fmt::Display;
+
+use crate::util::pretty_format::{indent, PrettyFormat};
+
 use super::err::{ParseError, ParseErrorKind};
 
-#[derive(Debug)]
 pub enum Type {
     Void,
     I32,
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let type_string = match self {
+            Type::Void => "void",
+            Type::I32 => "i32",
+        };
+        write!(f, "{type_string}")
+    }
 }
 
 impl TryFrom<String> for Type {
@@ -36,7 +50,6 @@ pub trait Operator {
     fn is_left_associative(&self) -> bool;
 }
 
-#[derive(Debug)]
 pub enum UnaryOperator {
     LogicalNot,
     BitNot,
@@ -57,7 +70,17 @@ impl Operator for UnaryOperator {
     }
 }
 
-#[derive(Debug)]
+impl Display for UnaryOperator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            UnaryOperator::LogicalNot => "LogicalNot",
+            UnaryOperator::BitNot => "BitNot",
+            UnaryOperator::Negative => "Negative",
+        };
+        write!(f, "{s}")
+    }
+}
+
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -115,7 +138,28 @@ impl Operator for BinaryOperator {
     }
 }
 
-#[derive(Debug)]
+impl Display for BinaryOperator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            BinaryOperator::Add => "Add",
+            BinaryOperator::Subtract => "Subtract",
+            BinaryOperator::Multiply => "Multiply",
+            BinaryOperator::Divide => "Divide",
+            BinaryOperator::LogicalAnd => "LogicalAnd",
+            BinaryOperator::LogicalOr => "LogicalOr",
+            BinaryOperator::BitAnd => "BitAnd",
+            BinaryOperator::BitOr => "BitOr",
+            BinaryOperator::Equal => "Equal",
+            BinaryOperator::NotEqual => "NotEqual",
+            BinaryOperator::LessThan => "LessThan",
+            BinaryOperator::LessThanEqual => "LessThanEqual",
+            BinaryOperator::GreaterThan => "GreaterThan",
+            BinaryOperator::GreaterThanEqual => "GreaterThanEqual",
+        };
+        write!(f, "{s}")
+    }
+}
+
 pub enum Expression {
     Identifier(String),
 
@@ -128,19 +172,60 @@ pub enum Expression {
     Call(String, Vec<Expression>),
 }
 
-#[derive(Debug)]
+impl PrettyFormat for Expression {
+    fn pretty_format(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indentation_num: usize,
+    ) -> std::fmt::Result {
+        let indentation = indent(indentation_num);
+        match self {
+            Expression::Identifier(identifier) => {
+                writeln!(f, "{indentation}{identifier}")?;
+            }
+            Expression::IntLiteral(literal) => {
+                writeln!(f, "{indentation}{literal}")?;
+            }
+            Expression::FloatLiteral(literal) => {
+                writeln!(f, "{indentation}{literal}")?;
+            }
+            Expression::Unary(operator, expression) => {
+                writeln!(f, "{indentation}{operator}")?;
+                expression.pretty_format(f, indentation_num + 1)?;
+            }
+            Expression::Binary(operator, left, right) => {
+                writeln!(f, "{indentation}{operator}")?;
+                left.pretty_format(f, indentation_num + 1)?;
+                right.pretty_format(f, indentation_num + 1)?;
+            }
+            Expression::Call(callee, arguments) => {
+                writeln!(f, "{indentation}Call {callee}")?;
+                for arg in arguments {
+                    arg.pretty_format(f, indentation_num + 1)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct Parameter {
     pub identifier: String,
 }
 
-#[derive(Debug)]
+impl Display for Parameter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let identifier = &self.identifier;
+        write!(f, "{identifier}")
+    }
+}
+
 pub struct FunctionPrototype {
     pub identifier: String,
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
 }
 
-#[derive(Debug)]
 pub enum Statement {
     Empty,
     Block(Vec<Statement>),
@@ -158,7 +243,87 @@ pub enum Statement {
     },
 }
 
-#[derive(Debug)]
+impl PrettyFormat for Statement {
+    fn pretty_format(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indentation_num: usize,
+    ) -> std::fmt::Result {
+        let indentation = indent(indentation_num);
+        match self {
+            Statement::Empty => {}
+            Statement::Block(statements) => {
+                for statement in statements {
+                    statement.pretty_format(f, indentation_num)?;
+                }
+            }
+            Statement::Return(expression) => {
+                writeln!(f, "{indentation}Return")?;
+                expression.pretty_format(f, indentation_num + 1)?;
+            }
+            Statement::Expression(_) => todo!(),
+            Statement::If {
+                condition,
+                body,
+                else_body,
+            } => {
+                writeln!(f, "{indentation}If")?;
+                condition.pretty_format(f, indentation_num + 1)?;
+                writeln!(f, "{indentation}Then")?;
+                body.pretty_format(f, indentation_num + 1)?;
+                if let Some(else_body) = else_body {
+                    writeln!(f, "{indentation}Else")?;
+                    else_body.pretty_format(f, indentation_num + 1)?;
+                }
+            }
+            Statement::Let(identifier, expression) => {
+                writeln!(f, "{indentation}Let {identifier}")?;
+                expression.pretty_format(f, indentation_num + 1)?;
+            }
+            Statement::Define {
+                prototype:
+                    FunctionPrototype {
+                        identifier,
+                        parameters,
+                        return_type,
+                    },
+                body,
+            } => {
+                let parameters = parameters
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(
+                    f,
+                    "{indentation}Define {identifier}({parameters}) -> {return_type}"
+                )?;
+                body.pretty_format(f, indentation_num + 1)?;
+            }
+        };
+        Ok(())
+    }
+}
+
 pub struct Program {
     pub statements: Vec<Statement>,
+}
+
+impl PrettyFormat for Program {
+    fn pretty_format(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indentation_num: usize,
+    ) -> std::fmt::Result {
+        for statement in &self.statements {
+            statement.pretty_format(f, indentation_num)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.pretty_format(f, 0)
+    }
 }
