@@ -261,7 +261,9 @@ impl PrettyFormat for Statement {
                 writeln!(f, "{indentation}Return")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }
-            Statement::Expression(_) => todo!(),
+            Statement::Expression(expression) => {
+                expression.pretty_format(f, indentation_num)?;
+            },
             Statement::If {
                 condition,
                 body,

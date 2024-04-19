@@ -11,6 +11,7 @@ use super::err::IrError;
 pub enum IrType {
     Void,
     I32,
+    Bool,
     Function {
         return_type: Box<IrType>,
         parameter_types: Vec<IrType>,
@@ -34,6 +35,7 @@ impl Display for IrType {
         let s = match self {
             IrType::Void => "void",
             IrType::I32 => "i32",
+            IrType::Bool => "i1",
             IrType::Function {
                 return_type: _,
                 parameter_types: _,
@@ -51,6 +53,7 @@ pub enum Value {
     GlobalPointer(String),
     Parameter(String),
     Function(String),
+    Label(String),
 }
 
 impl Display for Value {
@@ -61,6 +64,7 @@ impl Display for Value {
             }
             Value::Immediate(value) => write!(f, "{value}"),
             Value::GlobalPointer(id) | Value::Function(id) => write!(f, "@{id}"),
+            Value::Label(id) => write!(f, "{id}"),
         }
     }
 }
@@ -75,6 +79,8 @@ pub enum IrBinaryOpcode {
     Subtract,
     Multiply,
     DivideSigned,
+
+    Compare(Comparator),
 }
 
 impl Display for IrBinaryOpcode {
@@ -84,6 +90,23 @@ impl Display for IrBinaryOpcode {
             IrBinaryOpcode::Subtract => write!(f, "sub"),
             IrBinaryOpcode::Multiply => write!(f, "mul"),
             IrBinaryOpcode::DivideSigned => write!(f, "sdiv"),
+            IrBinaryOpcode::Compare(comparator) => write!(f, "icmp {comparator}"),
+        }
+    }
+}
+
+pub enum Comparator {
+    Equal,
+    SignedLessThan,
+    SignedGreaterThan,
+}
+
+impl Display for Comparator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Comparator::Equal => write!(f, "eq"),
+            Comparator::SignedLessThan => write!(f, "slt"),
+            Comparator::SignedGreaterThan => write!(f, "sgt"),
         }
     }
 }
@@ -125,6 +148,80 @@ pub enum Instruction {
         function: IrFunctionPrototype,
         arguments: Vec<Value>,
     },
+    Label(Value),
+    Jump(Value),
+    JumpIf {
+        condition: Value,
+        when_true: Value,
+        when_false: Value,
+    },
+    Unreachable,
+}
+
+impl Instruction {
+    fn format_definition(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
+        let Instruction::Definition(IrFunctionPrototype { function_type, id }, parameters, body) =
+            self
+        else {
+            return Err(fmt::Error);
+        };
+        let IrType::Function {
+            return_type,
+            parameter_types,
+        } = function_type
+        else {
+            return Err(fmt::Error);
+        };
+
+        let parameters = parameter_types
+            .iter()
+            .zip(parameters)
+            .map(|(param_type, param)| format!("{param_type} {param}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let indentation = indent(indentation_num);
+        writeln!(f, "{indentation}define {return_type} {id}({parameters}) {{")?;
+        body.pretty_format(f, indentation_num + 1)?;
+        writeln!(f, "{indentation}}}")?;
+        writeln!(f)?;
+        Ok(())
+    }
+
+    fn format_call(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
+        let Instruction::Call {
+            receiver,
+            function,
+            arguments,
+        } = &self
+        else {
+            return Err(fmt::Error);
+        };
+        let receiver = receiver
+            .as_ref()
+            .map_or(String::new(), |receiver| format!("{receiver} = "));
+        let function_type = &function.function_type;
+        let IrType::Function {
+            return_type,
+            parameter_types: parameter_type,
+        } = function_type
+        else {
+            return Err(fmt::Error);
+        };
+        let id = &function.id;
+        let arguments = arguments
+            .iter()
+            .zip(parameter_type.iter())
+            .map(|(argument, parameter_type)| format!("{parameter_type} {argument}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let indentation = indent(indentation_num);
+        writeln!(
+            f,
+            "{indentation}{receiver}call {return_type} {id}({arguments})"
+        )
+    }
 }
 
 impl PrettyFormat for Instruction {
@@ -148,31 +245,7 @@ impl PrettyFormat for Instruction {
                 }
                 Ok(())
             }
-            Instruction::Definition(
-                IrFunctionPrototype { function_type, id },
-                parameters,
-                body,
-            ) => {
-                let IrType::Function {
-                    return_type,
-                    parameter_types,
-                } = function_type
-                else {
-                    return Err(fmt::Error);
-                };
-
-                let parameters = parameter_types
-                    .iter()
-                    .zip(parameters)
-                    .map(|(param_type, param)| format!("{param_type} {param}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                writeln!(f, "{indentation}define {return_type} {id}({parameters}) {{")?;
-                body.pretty_format(f, indentation_num + 1)?;
-                writeln!(f, "{indentation}}}")?;
-                writeln!(f)?;
-                Ok(())
-            }
+            Instruction::Definition(_, _, _) => self.format_definition(f, indentation_num),
             Instruction::Bitcast { from, to } => {
                 writeln!(f, "{indentation}{to} = bitcast i32 {from} to i32")
             }
@@ -194,32 +267,28 @@ impl PrettyFormat for Instruction {
                 writeln!(f, "{indentation}store i32 {from}, ptr {to}")
             }
             Instruction::Call {
-                receiver,
-                function,
-                arguments,
+                receiver: _,
+                function: _,
+                arguments: _,
+            } => self.format_call(f, indentation_num),
+            Instruction::Label(label) => {
+                writeln!(f, "{label}:")
+            }
+            Instruction::Jump(label) => {
+                writeln!(f, "{indentation}br label %{label}")
+            }
+            Instruction::JumpIf {
+                condition,
+                when_true,
+                when_false,
             } => {
-                let receiver = receiver
-                    .as_ref()
-                    .map_or(String::new(), |receiver| format!("{receiver} = "));
-                let function_type = &function.function_type;
-                let IrType::Function {
-                    return_type,
-                    parameter_types: parameter_type,
-                } = function_type
-                else {
-                    return Err(fmt::Error);
-                };
-                let id = &function.id;
-                let arguments = arguments
-                    .iter()
-                    .zip(parameter_type.iter())
-                    .map(|(argument, parameter_type)| format!("{parameter_type} {argument}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 writeln!(
                     f,
-                    "{indentation}{receiver}call {return_type} {id}({arguments})"
+                    "{indentation}br i1 {condition}, label %{when_true}, label %{when_false}"
                 )
+            }
+            Instruction::Unreachable => {
+                writeln!(f, "{indentation}unreachable")
             }
         }
     }

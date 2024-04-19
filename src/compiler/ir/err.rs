@@ -15,6 +15,7 @@ pub enum IrErrorKind {
     MissingExpression,
     MissingReturn,
     MissingLet,
+    MissingIf,
     UnknownType(Type),
     MismatchedType,
 
@@ -60,6 +61,9 @@ impl ReportableError for IrError {
             }
             IrErrorKind::MissingLet => {
                 panic!("missing let.")
+            }
+            IrErrorKind::MissingIf => {
+                panic!("missing if.")
             }
             IrErrorKind::UnknownType(unknown_type) => {
                 panic!("unknown type {unknown_type}.");
