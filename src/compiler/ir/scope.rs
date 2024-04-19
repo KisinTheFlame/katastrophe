@@ -3,14 +3,18 @@ use std::{collections::HashMap, fmt::Display};
 
 use super::{
     err::{IrError, IrErrorKind},
-    id_generator::next_id,
+    id_generator::{
+        next_anonymous_id, next_function_id, next_global_id, next_label_id, next_mutable_id,
+        next_parameter_id, reset_anonymous_id, reset_label_id, reset_mutable_id,
+        reset_parameter_id,
+    },
     instruction::{IrType, Value},
 };
 
 pub enum Tag {
     Anonymous,
     Named(&'static str),
-    Dynamic(String),
+    Function(String),
     Global,
     Builtin,
 }
@@ -24,8 +28,8 @@ impl Display for Tag {
             Tag::Named(name) => {
                 write!(f, "Named {name}")
             }
-            Tag::Dynamic(name) => {
-                write!(f, "Dynamic {name}")
+            Tag::Function(name) => {
+                write!(f, "Function {name}")
             }
             Tag::Global => {
                 write!(f, "Global")
@@ -39,11 +43,11 @@ impl Display for Tag {
 
 impl PartialEq for Tag {
     fn eq(&self, other: &Self) -> bool {
-        use Tag::{Anonymous, Builtin, Dynamic, Global, Named};
+        use Tag::{Anonymous, Builtin, Function, Global, Named};
         match (self, other) {
             (Anonymous, Anonymous) | (Builtin, Builtin) | (Global, Global) => true,
             (Named(l), Named(r)) => l == r,
-            (Dynamic(l), Dynamic(r)) => l == r,
+            (Function(l), Function(r)) => l == r,
             _ => false,
         }
     }
@@ -63,6 +67,13 @@ impl Scope {
     }
 
     pub fn enter(&mut self, tag: Tag) {
+        if let Tag::Function(_) = tag {
+            reset_parameter_id();
+            reset_label_id();
+            reset_mutable_id();
+            reset_anonymous_id();
+        }
+
         let new_layer = Box::new(ScopeLayer::new(tag, self.current_layer.take()));
         self.current_layer = Some(new_layer);
     }
@@ -87,7 +98,7 @@ impl Scope {
     }
 
     pub fn declare_anonymous(&self) -> Value {
-        let id = next_id();
+        let id = next_anonymous_id();
         Value::Register(format!("t{id}"))
     }
 
@@ -100,7 +111,7 @@ impl Scope {
         symbol: &String,
         data_type: &IrType,
     ) -> Result<Value, IrError> {
-        let id = next_id();
+        let id = next_parameter_id();
         self.declare(
             symbol,
             data_type,
@@ -113,7 +124,7 @@ impl Scope {
         symbol: &String,
         data_type: &IrType,
     ) -> Result<Value, IrError> {
-        let id = next_id();
+        let id = next_mutable_id();
         self.declare(
             symbol,
             data_type,
@@ -126,7 +137,7 @@ impl Scope {
         symbol: &String,
         data_type: &IrType,
     ) -> Result<Value, IrError> {
-        let id = next_id();
+        let id = next_global_id();
         self.declare(
             symbol,
             data_type,
@@ -139,12 +150,17 @@ impl Scope {
         symbol: &String,
         data_type: &IrType,
     ) -> Result<Value, IrError> {
-        let id = next_id();
+        let id = next_function_id();
         self.declare(
             symbol,
             data_type,
             Value::Function(format!("f{id}.{symbol}")),
         )
+    }
+
+    pub fn declare_label(&self) -> Value {
+        let id = next_label_id();
+        Value::Label(format!("l{id}"))
     }
 
     fn declare(

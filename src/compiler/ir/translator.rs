@@ -5,7 +5,7 @@ use crate::compiler::syntax::ast::{
 use super::{
     builtin::{deinit_builtin_scope, init_builtin_scope},
     err::{IrError, IrErrorKind},
-    instruction::{Instruction, IrBinaryOpcode, IrFunctionPrototype, IrType, Value},
+    instruction::{Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrType, Value},
     scope::{Scope, Tag},
 };
 
@@ -46,45 +46,34 @@ impl Translator {
         let (right_instruction, right) = self.translate_expression(right)?;
         let result = self.scope.declare_anonymous();
 
-        let operation = match operator {
-            BinaryOperator::Add => Instruction::Binary {
-                operator: IrBinaryOpcode::Add,
-                result: result.clone(),
-                left,
-                right,
-            },
-            BinaryOperator::Subtract => Instruction::Binary {
-                operator: IrBinaryOpcode::Subtract,
-                result: result.clone(),
-                left,
-                right,
-            },
-            BinaryOperator::Multiply => Instruction::Binary {
-                operator: IrBinaryOpcode::Multiply,
-                result: result.clone(),
-                left,
-                right,
-            },
-            BinaryOperator::Divide => Instruction::Binary {
-                operator: IrBinaryOpcode::DivideSigned,
-                result: result.clone(),
-                left,
-                right,
-            },
+        let operator = match operator {
+            BinaryOperator::Add => IrBinaryOpcode::Add,
+            BinaryOperator::Subtract => IrBinaryOpcode::Subtract,
+            BinaryOperator::Multiply => IrBinaryOpcode::Multiply,
+            BinaryOperator::Divide => IrBinaryOpcode::DivideSigned,
             BinaryOperator::LogicalAnd => todo!(),
             BinaryOperator::LogicalOr => todo!(),
             BinaryOperator::BitAnd => todo!(),
             BinaryOperator::BitOr => todo!(),
-            BinaryOperator::Equal => todo!(),
+            BinaryOperator::Equal => IrBinaryOpcode::Compare(Comparator::Equal),
             BinaryOperator::NotEqual => todo!(),
-            BinaryOperator::LessThan => todo!(),
+            BinaryOperator::LessThan => IrBinaryOpcode::Compare(Comparator::SignedLessThan),
             BinaryOperator::LessThanEqual => todo!(),
-            BinaryOperator::GreaterThan => todo!(),
+            BinaryOperator::GreaterThan => IrBinaryOpcode::Compare(Comparator::SignedGreaterThan),
             BinaryOperator::GreaterThanEqual => todo!(),
         };
 
         Ok((
-            Instruction::Batch(vec![left_instruction, right_instruction, operation]),
+            Instruction::Batch(vec![
+                left_instruction,
+                right_instruction,
+                Instruction::Binary {
+                    operator,
+                    result: result.clone(),
+                    left,
+                    right,
+                },
+            ]),
             result,
         ))
     }
@@ -175,9 +164,78 @@ impl Translator {
         Ok(instruction)
     }
 
-    fn translate_if_statement(&self, statement: Statement) -> Result<Instruction, IrError> {
-        drop(statement);
-        todo!()
+    /// source code example:
+    /// ```
+    /// if condition {
+    ///     do_something_a();
+    /// } else {
+    ///     do_something_b();
+    /// }
+    /// ```
+    ///
+    ///
+    /// translation:
+    /// ```
+    ///     br label %start_label
+    /// start_label:
+    ///     condition_instructions
+    ///     br i1 condition_id, label %when_true_label, label %when_false_label
+    /// when_true_label:
+    ///     do_something_a();
+    ///     br label %end_label
+    /// when_false_label:
+    ///     do_something_b();
+    ///     br label %end_label
+    /// end_label:
+    /// ```
+    fn translate_if_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
+        let Statement::If {
+            condition,
+            body,
+            else_body,
+        } = statement
+        else {
+            return Err(IrError {
+                kind: IrErrorKind::MissingIf,
+            });
+        };
+        let start = self.scope.declare_label();
+        let when_true = self.scope.declare_label();
+        let when_false = self.scope.declare_label();
+        let end = self.scope.declare_label();
+
+        let jump_to_start = Instruction::Jump(start.clone());
+        let start_label = Instruction::Label(start);
+        let (condition_instructions, condition) = self.translate_expression(condition)?;
+        let conditional_jump = Instruction::JumpIf {
+            condition,
+            when_true: when_true.clone(),
+            when_false: when_false.clone(),
+        };
+        let when_true_label = Instruction::Label(when_true);
+        let body_instructions = self.translate_statement(*body)?;
+        let jump_true_to_end = Instruction::Jump(end.clone());
+        let when_false_label = Instruction::Label(when_false);
+        let else_body_instructions = match else_body {
+            Some(statement) => self.translate_statement(*statement)?,
+            None => Instruction::NoOperation,
+        };
+        let jump_false_to_end = Instruction::Jump(end.clone());
+        let end_label = Instruction::Label(end);
+
+        Ok(Instruction::Batch(vec![
+            jump_to_start,
+            start_label,
+            condition_instructions,
+            conditional_jump,
+            when_true_label,
+            body_instructions,
+            jump_true_to_end,
+            when_false_label,
+            else_body_instructions,
+            jump_false_to_end,
+            end_label,
+        ]))
     }
 
     fn translate_let_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
@@ -249,9 +307,8 @@ impl Translator {
             parameter_types,
         };
         let function = self.scope.declare_function(&identifier, &function_type)?;
-        let tag_name = format!("function {identifier}");
 
-        self.scope.enter(Tag::Dynamic(tag_name.clone()));
+        self.scope.enter(Tag::Function(identifier.clone()));
         let mut parameter_list = Vec::new();
         for parameter in &parameters {
             parameter_list.push(
@@ -259,9 +316,12 @@ impl Translator {
                     .declare_parameter(&parameter.identifier, &IrType::I32)?,
             );
         }
-        let body = self.translate_statement(*body)?;
+        let body = Instruction::Batch(vec![
+            self.translate_statement(*body)?,
+            Instruction::Unreachable,
+        ]);
         let body = Box::new(body);
-        self.scope.leave(Tag::Dynamic(tag_name.clone()))?;
+        self.scope.leave(Tag::Function(identifier.clone()))?;
 
         Ok(Instruction::Definition(
             IrFunctionPrototype {
