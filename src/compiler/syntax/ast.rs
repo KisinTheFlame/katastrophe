@@ -1,32 +1,97 @@
 use core::fmt;
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hash};
 
 use crate::util::pretty_format::{indent, PrettyFormat};
 
 use super::err::{ParseError, ParseErrorKind};
 
+#[derive(Clone)]
 pub enum Type {
+    Unknown,
     Void,
     I32,
+    Bool,
+    Function {
+        return_type: Box<Type>,
+        parameter_types: Vec<Type>,
+    },
+}
+
+impl Type {
+    fn format_parameter_types(parameter_types: &[Type]) -> String {
+        parameter_types
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+impl Eq for Type {}
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::Unknown, Type::Unknown)
+            | (Type::Void, Type::Void)
+            | (Type::I32, Type::I32)
+            | (Type::Bool, Type::Bool) => true,
+            (
+                Type::Function {
+                    return_type: r1,
+                    parameter_types: p1,
+                },
+                Type::Function {
+                    return_type: r2,
+                    parameter_types: p2,
+                },
+            ) => r1 == r2 && p1 == p2,
+            (_, _) => false,
+        }
+    }
+}
+
+impl Hash for Type {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state);
+    }
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let type_string = match self {
-            Type::Void => "void",
-            Type::I32 => "i32",
+        match self {
+            Type::Unknown => {
+                write!(f, "unknown")?;
+            }
+            Type::Void => {
+                write!(f, "void")?;
+            }
+            Type::I32 => {
+                write!(f, "i32")?;
+            }
+            Type::Bool => {
+                write!(f, "bool")?;
+            }
+            Type::Function {
+                return_type,
+                parameter_types,
+            } => {
+                let parameter_types = Type::format_parameter_types(parameter_types);
+                write!(f, "({parameter_types}) -> {return_type}")?;
+            }
         };
-        write!(f, "{type_string}")
+        Ok(())
     }
 }
 
 impl TryFrom<String> for Type {
     type Error = ParseError;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    fn try_from(value: String) -> Result<Type, ParseError> {
         match value.as_str() {
             "void" => Ok(Type::Void),
             "i32" => Ok(Type::I32),
+            "bool" => Ok(Type::Bool),
             _ => Err(ParseError {
                 kind: ParseErrorKind::UnknownType(value),
             }),
@@ -81,6 +146,7 @@ impl Display for UnaryOperator {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -166,8 +232,8 @@ pub enum Expression {
     IntLiteral(i32),
     FloatLiteral(f64),
 
-    Unary(UnaryOperator, Box<Expression>),
-    Binary(BinaryOperator, Box<Expression>, Box<Expression>),
+    Unary(UnaryOperator, Type, Box<Expression>),
+    Binary(BinaryOperator, Type, Box<Expression>, Box<Expression>),
 
     Call(String, Vec<Expression>),
 }
@@ -189,11 +255,11 @@ impl PrettyFormat for Expression {
             Expression::FloatLiteral(literal) => {
                 writeln!(f, "{indentation}{literal}")?;
             }
-            Expression::Unary(operator, expression) => {
+            Expression::Unary(operator, _, expression) => {
                 writeln!(f, "{indentation}{operator}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }
-            Expression::Binary(operator, left, right) => {
+            Expression::Binary(operator, _, left, right) => {
                 writeln!(f, "{indentation}{operator}")?;
                 left.pretty_format(f, indentation_num + 1)?;
                 right.pretty_format(f, indentation_num + 1)?;
@@ -209,13 +275,11 @@ impl PrettyFormat for Expression {
     }
 }
 
-pub struct Parameter {
-    pub identifier: String,
-}
+pub struct Parameter(pub String);
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let identifier = &self.identifier;
+        let Parameter(identifier) = self;
         write!(f, "{identifier}")
     }
 }
@@ -223,24 +287,32 @@ impl Display for Parameter {
 pub struct FunctionPrototype {
     pub identifier: String,
     pub parameters: Vec<Parameter>,
-    pub return_type: Type,
+    pub function_type: Type,
+}
+
+pub struct Variable(pub String, pub Type);
+
+pub struct IfDetail {
+    pub condition: Expression,
+    pub true_body: Box<Statement>,
+    pub false_body: Option<Box<Statement>>,
+}
+
+pub struct LetDetail(pub Variable, pub Expression);
+
+pub struct DefineDetail {
+    pub prototype: FunctionPrototype,
+    pub body: Box<Statement>,
 }
 
 pub enum Statement {
     Empty,
     Block(Vec<Statement>),
-    Return(Expression),
+    Return(Option<Expression>),
     Expression(Expression),
-    If {
-        condition: Expression,
-        body: Box<Statement>,
-        else_body: Option<Box<Statement>>,
-    },
-    Let(String, Expression),
-    Define {
-        prototype: FunctionPrototype,
-        body: Box<Statement>,
-    },
+    If(IfDetail),
+    Let(LetDetail),
+    Define(DefineDetail),
 }
 
 impl PrettyFormat for Statement {
@@ -259,16 +331,18 @@ impl PrettyFormat for Statement {
             }
             Statement::Return(expression) => {
                 writeln!(f, "{indentation}Return")?;
-                expression.pretty_format(f, indentation_num + 1)?;
+                expression
+                    .as_ref()
+                    .map(|e| e.pretty_format(f, indentation_num + 1));
             }
             Statement::Expression(expression) => {
                 expression.pretty_format(f, indentation_num)?;
-            },
-            Statement::If {
+            }
+            Statement::If(IfDetail {
                 condition,
-                body,
-                else_body,
-            } => {
+                true_body: body,
+                false_body: else_body,
+            }) => {
                 writeln!(f, "{indentation}If")?;
                 condition.pretty_format(f, indentation_num + 1)?;
                 writeln!(f, "{indentation}Then")?;
@@ -278,22 +352,31 @@ impl PrettyFormat for Statement {
                     else_body.pretty_format(f, indentation_num + 1)?;
                 }
             }
-            Statement::Let(identifier, expression) => {
-                writeln!(f, "{indentation}Let {identifier}")?;
+            Statement::Let(LetDetail(variable, expression)) => {
+                let Variable(id, var_type) = variable;
+                writeln!(f, "{indentation}Let {id} as {var_type}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }
-            Statement::Define {
+            Statement::Define(DefineDetail {
                 prototype:
                     FunctionPrototype {
                         identifier,
                         parameters,
-                        return_type,
+                        function_type,
                     },
                 body,
-            } => {
+            }) => {
+                let Type::Function {
+                    return_type,
+                    parameter_types,
+                } = function_type
+                else {
+                    panic!("must be a function type");
+                };
                 let parameters = parameters
                     .iter()
-                    .map(ToString::to_string)
+                    .zip(parameter_types)
+                    .map(|(parameter, param_type)| format!("{parameter} as {param_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 writeln!(

@@ -1,33 +1,91 @@
-use crate::compiler::syntax::ast::{
-    BinaryOperator, Expression, FunctionPrototype, Program, Statement,
+use crate::compiler::{
+    err::CompileError,
+    scope::Tag,
+    syntax::ast::{
+        BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
+        Parameter, Program, Statement, Type, Variable,
+    },
 };
 
+use super::err::IrError;
 use super::{
     builtin::{deinit_builtin_scope, init_builtin_scope},
-    err::{IrError, IrErrorKind},
-    instruction::{Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrType, Value},
-    scope::{Scope, Tag},
+    id::{
+        next_anonymous_id, next_function_id, next_global_id, next_label_id, next_mutable_id,
+        next_parameter_id,
+    },
+    instruction::{
+        Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrScope, IrType, Value,
+    },
 };
 
 pub struct Translator {
-    scope: Scope,
+    scope: IrScope,
 }
 
 impl Translator {
     #[must_use]
     pub fn new() -> Translator {
         Translator {
-            scope: Scope::new(),
+            scope: IrScope::new(),
         }
     }
 
-    fn translate_block_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
+    fn declare_anonymous(&self) -> Value {
+        let id = next_anonymous_id();
+        Value::Register(format!("t{id}"))
+    }
+
+    fn declare_parameter(
+        &mut self,
+        symbol: String,
+        data_type: IrType,
+    ) -> Result<Value, CompileError> {
+        let id = next_parameter_id();
+        let value = Value::Parameter(format!("p{id}.{symbol}"));
+        self.scope.declare(symbol, (value.clone(), data_type))?;
+        Ok(value)
+    }
+
+    fn declare_mutable(
+        &mut self,
+        symbol: String,
+        data_type: IrType,
+    ) -> Result<Value, CompileError> {
+        let id = next_mutable_id();
+        let value = Value::StackPointer(format!("v{id}.{symbol}"));
+        self.scope.declare(symbol, (value.clone(), data_type))?;
+        Ok(value)
+    }
+
+    fn declare_global(&mut self, symbol: String, data_type: IrType) -> Result<Value, CompileError> {
+        let id = next_global_id();
+        let value = Value::GlobalPointer(format!("g{id}.{symbol}"));
+        self.scope.declare(symbol, (value.clone(), data_type))?;
+        Ok(value)
+    }
+
+    fn declare_function(
+        &mut self,
+        symbol: String,
+        data_type: IrType,
+    ) -> Result<Value, CompileError> {
+        let id = next_function_id();
+        let value = Value::Function(format!("f{id}.{symbol}"));
+        self.scope.declare(symbol, (value.clone(), data_type))?;
+        Ok(value)
+    }
+
+    fn declare_label(&self) -> Value {
+        let id = next_label_id();
+        Value::Label(format!("l{id}"))
+    }
+
+    fn translate_block_statement(
+        &mut self,
+        statements: Vec<Statement>,
+    ) -> Result<Instruction, CompileError> {
         self.scope.enter(Tag::Named("block"));
-        let Statement::Block(statements) = statement else {
-            return Err(IrError {
-                kind: IrErrorKind::MissingBlock,
-            });
-        };
         let mut instructions = Vec::new();
         for statement in statements {
             instructions.push(self.translate_statement(statement)?);
@@ -39,12 +97,13 @@ impl Translator {
     fn translate_binary_expression(
         &mut self,
         operator: &BinaryOperator,
+        sub_type: &Type,
         left: Expression,
         right: Expression,
-    ) -> Result<(Instruction, Value), IrError> {
+    ) -> Result<(Instruction, Value), CompileError> {
         let (left_instruction, left) = self.translate_expression(left)?;
         let (right_instruction, right) = self.translate_expression(right)?;
-        let result = self.scope.declare_anonymous();
+        let result = self.declare_anonymous();
 
         let operator = match operator {
             BinaryOperator::Add => IrBinaryOpcode::Add,
@@ -63,12 +122,15 @@ impl Translator {
             BinaryOperator::GreaterThanEqual => todo!(),
         };
 
+        let data_type = IrType::from(sub_type.clone());
+
         Ok((
             Instruction::Batch(vec![
                 left_instruction,
                 right_instruction,
                 Instruction::Binary {
                     operator,
+                    data_type,
                     result: result.clone(),
                     left,
                     right,
@@ -81,18 +143,17 @@ impl Translator {
     fn translate_expression(
         &mut self,
         expression: Expression,
-    ) -> Result<(Instruction, Value), IrError> {
+    ) -> Result<(Instruction, Value), CompileError> {
         match expression {
             Expression::Identifier(identifier) => self.scope.lookup_symbol(&identifier)?.map_or(
-                Err(IrError {
-                    kind: IrErrorKind::UndeclaredIdentifier(identifier),
-                }),
-                |(value, _)| {
+                Err(IrError::UndeclaredIdentifier(identifier).into()),
+                |(value, data_type)| {
                     if let Value::Parameter(_) = value {
                         Ok((Instruction::NoOperation, value))
                     } else {
-                        let result = self.scope.declare_anonymous();
+                        let result = self.declare_anonymous();
                         let instruction = Instruction::Load {
+                            data_type,
                             from: value,
                             to: result.clone(),
                         };
@@ -104,27 +165,23 @@ impl Translator {
                 Ok((Instruction::NoOperation, Value::Immediate(literal)))
             }
             Expression::FloatLiteral(_) => todo!(),
-            Expression::Unary(_, _) => todo!(),
-            Expression::Binary(operator, left, right) => {
-                self.translate_binary_expression(&operator, *left, *right)
+            Expression::Unary(_, _, _) => todo!(),
+            Expression::Binary(operator, expression_type, left, right) => {
+                self.translate_binary_expression(&operator, &expression_type, *left, *right)
             }
             Expression::Call(function_name, arguments) => {
-                let receiver = self.scope.declare_anonymous();
+                let receiver = self.declare_anonymous();
                 let Some((function_id, function_type)) =
                     self.scope.lookup_symbol(&function_name)?
                 else {
-                    return Err(IrError {
-                        kind: IrErrorKind::UndeclaredIdentifier(function_name),
-                    });
+                    return Err(IrError::UndeclaredIdentifier(function_name).into());
                 };
                 let IrType::Function {
                     return_type,
                     parameter_types: _,
                 } = function_type.clone()
                 else {
-                    return Err(IrError {
-                        kind: IrErrorKind::MismatchedType,
-                    });
+                    return Err(IrError::MismatchedType.into());
                 };
                 let mut instructions = Vec::new();
                 let mut argument_list = Vec::new();
@@ -153,13 +210,8 @@ impl Translator {
 
     fn translate_expression_statement(
         &mut self,
-        statement: Statement,
-    ) -> Result<Instruction, IrError> {
-        let Statement::Expression(expression) = statement else {
-            return Err(IrError {
-                kind: IrErrorKind::MissingExpression,
-            });
-        };
+        expression: Expression,
+    ) -> Result<Instruction, CompileError> {
         let (instruction, _) = self.translate_expression(expression)?;
         Ok(instruction)
     }
@@ -188,21 +240,16 @@ impl Translator {
     ///     br label %end_label
     /// end_label:
     /// ```
-    fn translate_if_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
-        let Statement::If {
+    fn translate_if_statement(&mut self, if_detail: IfDetail) -> Result<Instruction, CompileError> {
+        let IfDetail {
             condition,
-            body,
-            else_body,
-        } = statement
-        else {
-            return Err(IrError {
-                kind: IrErrorKind::MissingIf,
-            });
-        };
-        let start = self.scope.declare_label();
-        let when_true = self.scope.declare_label();
-        let when_false = self.scope.declare_label();
-        let end = self.scope.declare_label();
+            true_body,
+            false_body,
+        } = if_detail;
+        let start = self.declare_label();
+        let when_true = self.declare_label();
+        let when_false = self.declare_label();
+        let end = self.declare_label();
 
         let jump_to_start = Instruction::Jump(start.clone());
         let start_label = Instruction::Label(start);
@@ -213,10 +260,10 @@ impl Translator {
             when_false: when_false.clone(),
         };
         let when_true_label = Instruction::Label(when_true);
-        let body_instructions = self.translate_statement(*body)?;
+        let body_instructions = self.translate_statement(*true_body)?;
         let jump_true_to_end = Instruction::Jump(end.clone());
         let when_false_label = Instruction::Label(when_false);
-        let else_body_instructions = match else_body {
+        let false_body_instructions = match false_body {
             Some(statement) => self.translate_statement(*statement)?,
             None => Instruction::NoOperation,
         };
@@ -232,31 +279,32 @@ impl Translator {
             body_instructions,
             jump_true_to_end,
             when_false_label,
-            else_body_instructions,
+            false_body_instructions,
             jump_false_to_end,
             end_label,
         ]))
     }
 
-    fn translate_let_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
-        let Statement::Let(identifier, expression) = statement else {
-            return Err(IrError {
-                kind: IrErrorKind::MissingLet,
-            });
-        };
+    fn translate_let_statement(
+        &mut self,
+        let_detail: LetDetail,
+    ) -> Result<Instruction, CompileError> {
+        let LetDetail(Variable(identifier, var_type), expression) = let_detail;
+        let data_type = IrType::from(var_type);
         let (expression_instructions, expression) = self.translate_expression(expression)?;
         let assign_instruction = if self.scope.is_global()? {
-            let lvalue = self.scope.declare_global(&identifier, &IrType::I32)?;
+            let lvalue = self.declare_global(identifier, data_type.clone())?;
             Instruction::Global {
                 lvalue,
-                data_type: IrType::I32,
+                data_type,
                 value: expression,
             }
         } else {
-            let lvalue = self.scope.declare_mutable(&identifier, &IrType::I32)?;
+            let lvalue = self.declare_mutable(identifier, data_type.clone())?;
             Instruction::Batch(vec![
-                Instruction::Allocate(lvalue.clone()),
+                Instruction::Allocate(lvalue.clone(), data_type.clone()),
                 Instruction::Store {
+                    data_type,
                     from: expression,
                     to: lvalue,
                 },
@@ -266,13 +314,14 @@ impl Translator {
         Ok(Instruction::Batch(instructions))
     }
 
-    fn translate_return_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
-        let Statement::Return(expression) = statement else {
-            return Err(IrError {
-                kind: IrErrorKind::MissingReturn,
-            });
+    fn translate_return_statement(
+        &mut self,
+        return_value: Option<Expression>,
+    ) -> Result<Instruction, CompileError> {
+        let Some(return_value) = return_value else {
+            return Ok(Instruction::ReturnVoid);
         };
-        let (expression_instructions, expression) = self.translate_expression(expression)?;
+        let (expression_instructions, expression) = self.translate_expression(return_value)?;
         let instructions = vec![
             expression_instructions,
             Instruction::Return {
@@ -283,38 +332,38 @@ impl Translator {
         Ok(Instruction::Batch(instructions))
     }
 
-    fn translate_define_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
-        let Statement::Define {
+    fn translate_define_statement(
+        &mut self,
+        define_detail: DefineDetail,
+    ) -> Result<Instruction, CompileError> {
+        let DefineDetail {
             prototype:
                 FunctionPrototype {
                     identifier,
                     parameters,
-                    return_type,
+                    function_type,
                 },
             body,
-        } = statement
+        } = define_detail;
+        let Type::Function {
+            return_type,
+            parameter_types,
+        } = function_type
         else {
-            return Err(IrError {
-                kind: IrErrorKind::MissingDefinition,
-            });
+            return Err(IrError::MismatchedType.into());
         };
-        let mut parameter_types = Vec::new();
-        for _ in &parameters {
-            parameter_types.push(IrType::I32);
-        }
+        let parameter_types = parameter_types.into_iter().map(IrType::from).collect();
+        let return_type = *return_type;
         let function_type = IrType::Function {
-            return_type: Box::new(return_type.try_into()?),
+            return_type: Box::new(return_type.into()),
             parameter_types,
         };
-        let function = self.scope.declare_function(&identifier, &function_type)?;
+        let function = self.declare_function(identifier.clone(), function_type.clone())?;
 
         self.scope.enter(Tag::Function(identifier.clone()));
         let mut parameter_list = Vec::new();
-        for parameter in &parameters {
-            parameter_list.push(
-                self.scope
-                    .declare_parameter(&parameter.identifier, &IrType::I32)?,
-            );
+        for Parameter(identifier) in &parameters {
+            parameter_list.push(self.declare_parameter(identifier.clone(), IrType::I32)?);
         }
         let body = Instruction::Batch(vec![
             self.translate_statement(*body)?,
@@ -333,26 +382,19 @@ impl Translator {
         ))
     }
 
-    fn translate_statement(&mut self, statement: Statement) -> Result<Instruction, IrError> {
+    fn translate_statement(&mut self, statement: Statement) -> Result<Instruction, CompileError> {
         match statement {
             Statement::Empty => Ok(Instruction::NoOperation),
-            Statement::Block(_) => self.translate_block_statement(statement),
-            Statement::Return(_) => self.translate_return_statement(statement),
-            Statement::Expression(_) => self.translate_expression_statement(statement),
-            Statement::If {
-                condition: _,
-                body: _,
-                else_body: _,
-            } => self.translate_if_statement(statement),
-            Statement::Let(_, _) => self.translate_let_statement(statement),
-            Statement::Define {
-                prototype: _,
-                body: _,
-            } => self.translate_define_statement(statement),
+            Statement::Block(statements) => self.translate_block_statement(statements),
+            Statement::Return(return_value) => self.translate_return_statement(return_value),
+            Statement::Expression(expression) => self.translate_expression_statement(expression),
+            Statement::If(if_detail) => self.translate_if_statement(if_detail),
+            Statement::Let(let_detail) => self.translate_let_statement(let_detail),
+            Statement::Define(define_detail) => self.translate_define_statement(define_detail),
         }
     }
 
-    fn translate_program(&mut self, program: Program) -> Result<Instruction, IrError> {
+    fn translate_program(&mut self, program: Program) -> Result<Instruction, CompileError> {
         let mut instructions = Vec::new();
         for statement in program.statements {
             instructions.push(self.translate_statement(statement)?);
@@ -360,14 +402,12 @@ impl Translator {
         Ok(Instruction::Batch(instructions))
     }
 
-    fn generate_main(&mut self) -> Result<String, IrError> {
+    fn generate_main(&mut self) -> Result<String, CompileError> {
         let Some((main_id, _)) = self.scope.lookup_symbol(&String::from("main"))? else {
-            return Err(IrError {
-                kind: IrErrorKind::UndefinedMain,
-            });
+            return Err(IrError::UndefinedMain.into());
         };
         let template = format!(
-            "
+            "\
 define i32 @main() {{
     %main_return = call i32 {main_id}()
     ret i32 %main_return
@@ -378,11 +418,12 @@ define i32 @main() {{
     }
 
     /// # Errors
-    pub fn translate(&mut self, program: Program) -> Result<String, IrError> {
+    pub fn translate(&mut self, program: Program) -> Result<String, CompileError> {
         let mut llvm_code = String::new();
         init_builtin_scope(&mut self.scope, &mut llvm_code)?;
         self.scope.enter(Tag::Global);
-        let user_program = self.translate_program(program)?.to_string();
+        let user_program = self.translate_program(program)?;
+        let user_program = user_program.to_string();
         llvm_code.push_str(&user_program);
         let main = self.generate_main()?;
         llvm_code.push_str(&main);

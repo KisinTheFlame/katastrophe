@@ -10,6 +10,7 @@ pub enum Keyword {
     If,
     Else,
     While,
+    As,
 }
 
 static KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
@@ -22,6 +23,7 @@ static KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
             ("if", Keyword::If),
             ("else", Keyword::Else),
             ("while", Keyword::While),
+            ("as", Keyword::As),
         ]
         .map(|(s, k)| (s.to_string(), k)),
     )

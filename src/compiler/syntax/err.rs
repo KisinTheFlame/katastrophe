@@ -1,4 +1,4 @@
-use crate::util::reportable_error::ReportableError;
+use crate::{compiler::err::InnerCompilerError, util::reportable_error::ReportableError};
 
 use super::token::{Keyword, Symbol, Token};
 
@@ -52,6 +52,8 @@ pub enum ParseErrorKind {
 pub struct ParseError {
     pub kind: ParseErrorKind,
 }
+
+impl InnerCompilerError for ParseError {}
 
 impl ReportableError for ParseError {
     fn report(&self) -> ! {

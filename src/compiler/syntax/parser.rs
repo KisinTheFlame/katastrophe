@@ -1,7 +1,7 @@
 use super::{
     ast::{
-        BinaryOperator, Expression, FunctionPrototype, Operator, Parameter, Program, Statement,
-        Type, UnaryOperator,
+        BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail, Operator,
+        Parameter, Program, Statement, Type, UnaryOperator, Variable,
     },
     err::{ParseError, ParseErrorKind},
     lexer::Lexer,
@@ -152,7 +152,11 @@ impl Parser {
                 }
             };
             self.lexer.next();
-            Ok(Expression::Unary(operator, Box::new(self.parse_primary()?)))
+            Ok(Expression::Unary(
+                operator,
+                Type::Unknown,
+                Box::new(self.parse_primary()?),
+            ))
         } else {
             let kind = if let Some(token) = self.lexer.peek() {
                 ParseErrorKind::UnexpectedToken(token.clone())
@@ -226,6 +230,7 @@ impl Parser {
             let Some(next_operator) = self.peek_binary_operator() else {
                 return Ok(Expression::Binary(
                     current_operator,
+                    Type::Unknown,
                     Box::new(lhs),
                     Box::new(rhs),
                 ));
@@ -236,7 +241,12 @@ impl Parser {
                 rhs
             };
 
-            lhs = Expression::Binary(current_operator, Box::new(lhs), Box::new(rhs));
+            lhs = Expression::Binary(
+                current_operator,
+                Type::Unknown,
+                Box::new(lhs),
+                Box::new(rhs),
+            );
         }
     }
 
@@ -274,7 +284,7 @@ impl Parser {
         Ok(Statement::Block(statements))
     }
 
-    fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_if_statement(&mut self) -> Result<IfDetail, ParseError> {
         self.digest_keyword(&Keyword::If)?;
         let condition = self.parse_expression()?;
         let body = Box::new(self.parse_block_statement()?);
@@ -283,38 +293,66 @@ impl Parser {
         } else {
             None
         };
-        Ok(Statement::If {
+        Ok(IfDetail {
             condition,
-            body,
-            else_body,
+            true_body: body,
+            false_body: else_body,
         })
     }
 
-    fn parse_function_parameter(&mut self) -> Result<Parameter, ParseError> {
+    fn parse_function_parameter(&mut self) -> Result<(Parameter, Type), ParseError> {
         let identifier = self.parse_plain_identifier()?;
-        Ok(Parameter { identifier })
+        self.digest_keyword(&Keyword::As)?;
+        let parameter_type = self.parse_type()?;
+        Ok((Parameter(identifier), parameter_type))
     }
 
-    fn parse_function_parameters(&mut self) -> Result<Vec<Parameter>, ParseError> {
+    fn parse_function_parameters(&mut self) -> Result<(Vec<Parameter>, Vec<Type>), ParseError> {
         self.digest_symbol(&Symbol::LeftParentheses)?;
         if self.expect_symbol(&Symbol::RightParentheses) {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
         let mut parameters = Vec::<Parameter>::new();
+        let mut parameter_types = Vec::<Type>::new();
         loop {
-            let parameter = self.parse_function_parameter()?;
+            let (parameter, parameter_type) = self.parse_function_parameter()?;
             parameters.push(parameter);
+            parameter_types.push(parameter_type);
             if !self.expect_symbol(&Symbol::Comma) {
                 break;
             }
         }
         self.digest_symbol(&Symbol::RightParentheses)?;
-        Ok(parameters)
+        Ok((parameters, parameter_types))
+    }
+
+    fn parse_function_type(&mut self) -> Result<Type, ParseError> {
+        let mut parameter_types = Vec::new();
+        loop {
+            if self.expect_symbol(&Symbol::RightParentheses) {
+                break;
+            }
+            parameter_types.push(self.parse_type()?);
+            if !self.expect_symbol(&Symbol::Comma) {
+                self.digest_symbol(&Symbol::RightParentheses)?;
+                break;
+            }
+        }
+        self.digest_symbol(&Symbol::Arrow)?;
+        let return_type = Box::new(self.parse_type()?);
+        Ok(Type::Function {
+            return_type,
+            parameter_types,
+        })
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
-        let type_name = self.parse_plain_identifier()?;
-        Type::try_from(type_name)
+        if self.expect_symbol(&Symbol::LeftParentheses) {
+            self.parse_function_type()
+        } else {
+            let type_str = self.parse_plain_identifier()?;
+            Type::try_from(type_str)
+        }
     }
 
     fn parse_function_return_type(&mut self) -> Result<Type, ParseError> {
@@ -327,45 +365,58 @@ impl Parser {
 
     fn parse_function_prototype(&mut self) -> Result<FunctionPrototype, ParseError> {
         let identifier = self.parse_plain_identifier()?;
-        let parameters = self.parse_function_parameters()?;
-        let return_type = self.parse_function_return_type()?;
+        let (parameters, parameter_types) = self.parse_function_parameters()?;
+        let return_type = self.parse_function_return_type()?.into();
         Ok(FunctionPrototype {
             identifier,
             parameters,
-            return_type,
+            function_type: Type::Function {
+                return_type,
+                parameter_types,
+            },
         })
     }
 
-    fn parse_define_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_define_statement(&mut self) -> Result<DefineDetail, ParseError> {
         self.digest_keyword(&Keyword::Define)?;
         let prototype = self.parse_function_prototype()?;
         let body = Box::new(self.parse_block_statement()?);
-        Ok(Statement::Define { prototype, body })
+        Ok(DefineDetail { prototype, body })
     }
 
-    fn parse_let_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_let_statement(&mut self) -> Result<LetDetail, ParseError> {
         self.digest_keyword(&Keyword::Let)?;
-        let left_value = self.parse_plain_identifier()?;
+        let lvalue = self.parse_plain_identifier()?;
+        let lvalue_type = if self.expect_keyword(&Keyword::As) {
+            self.parse_type()?
+        } else {
+            Type::Unknown
+        };
         self.digest_symbol(&Symbol::Assign)?;
         let expression = self.parse_expression()?;
         self.digest_symbol(&Symbol::Semicolon)?;
-        Ok(Statement::Let(left_value, expression))
+        Ok(LetDetail(Variable(lvalue, lvalue_type), expression))
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
         self.digest_keyword(&Keyword::Return)?;
+        if self.expect_symbol(&Symbol::Semicolon) {
+            return Ok(Statement::Return(None));
+        }
         let expression = self.parse_expression()?;
         self.digest_symbol(&Symbol::Semicolon)?;
-        Ok(Statement::Return(expression))
+        Ok(Statement::Return(Some(expression)))
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.lexer.peek() {
             Some(Token::Keyword(Keyword::Return)) => self.parse_return_statement(),
-            Some(Token::Keyword(Keyword::If)) => self.parse_if_statement(),
+            Some(Token::Keyword(Keyword::If)) => Ok(Statement::If(self.parse_if_statement()?)),
             Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(),
-            Some(Token::Keyword(Keyword::Define)) => self.parse_define_statement(),
-            Some(Token::Keyword(Keyword::Let)) => self.parse_let_statement(),
+            Some(Token::Keyword(Keyword::Define)) => {
+                Ok(Statement::Define(self.parse_define_statement()?))
+            }
+            Some(Token::Keyword(Keyword::Let)) => Ok(Statement::Let(self.parse_let_statement()?)),
             Some(Token::Symbol(Symbol::Semicolon)) => self.parse_empty_statement(),
             Some(_) => self.parse_expression_statement(),
             None => Err(ParseError {

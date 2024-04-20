@@ -1,77 +1,36 @@
-use crate::{compiler::syntax::ast::Type, util::reportable_error::ReportableError};
+use crate::{
+    compiler::{err::InnerCompilerError, syntax::ast::Type},
+    util::reportable_error::ReportableError,
+};
 
-use super::scope::Tag;
-
-pub enum IrErrorKind {
-    NullScope,
-    ScopeMismatch { expected: Tag, encountered: Tag },
-    DuplicateIdentifierInSameScope(String),
-
+pub enum IrError {
     UndefinedMain,
     UndeclaredIdentifier(String),
 
-    MissingDefinition,
-    MissingBlock,
-    MissingExpression,
-    MissingReturn,
-    MissingLet,
-    MissingIf,
     UnknownType(Type),
     MismatchedType,
 
     BuiltinFileNotExist,
 }
 
-pub struct IrError {
-    pub kind: IrErrorKind,
-}
+impl InnerCompilerError for IrError {}
 
 impl ReportableError for IrError {
     fn report(&self) -> ! {
-        match &self.kind {
-            IrErrorKind::NullScope => {
-                panic!("null scope");
-            }
-            IrErrorKind::ScopeMismatch {
-                expected,
-                encountered,
-            } => {
-                panic!("scope mismatch. expected {expected}, encountered {encountered}.");
-            }
-            IrErrorKind::DuplicateIdentifierInSameScope(identifier) => {
-                panic!("encountered duplicate identifier {identifier} in same scope.");
-            }
-            IrErrorKind::UndefinedMain => {
+        match &self {
+            IrError::UndefinedMain => {
                 panic!("main function not found in global scope.");
             }
-            IrErrorKind::UndeclaredIdentifier(identifier) => {
+            IrError::UndeclaredIdentifier(identifier) => {
                 panic!("undeclared identifier {identifier} used.");
             }
-            IrErrorKind::MissingDefinition => {
-                panic!("missing definition.");
-            }
-            IrErrorKind::MissingBlock => {
-                panic!("missing block.");
-            }
-            IrErrorKind::MissingExpression => {
-                panic!("missing expression.");
-            }
-            IrErrorKind::MissingReturn => {
-                panic!("missing return.");
-            }
-            IrErrorKind::MissingLet => {
-                panic!("missing let.")
-            }
-            IrErrorKind::MissingIf => {
-                panic!("missing if.")
-            }
-            IrErrorKind::UnknownType(unknown_type) => {
+            IrError::UnknownType(unknown_type) => {
                 panic!("unknown type {unknown_type}.");
             }
-            IrErrorKind::MismatchedType => {
+            IrError::MismatchedType => {
                 panic!("mismatched type.");
             }
-            IrErrorKind::BuiltinFileNotExist => {
+            IrError::BuiltinFileNotExist => {
                 panic!("builtin file not exist.");
             }
         }
