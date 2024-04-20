@@ -4,6 +4,8 @@ use std::path::Path;
 use std::process::Command;
 use std::{env, fs};
 
+use compiler::semantics::type_inferrer::TypeInferrer;
+
 use crate::compiler::ir::translator::Translator;
 use crate::compiler::syntax::parser::Parser;
 use crate::util::reportable_error::ReportableError;
@@ -148,7 +150,7 @@ fn main() {
     };
 
     let mut parser = Parser::new(code.as_str());
-    let program = match parser.parse_program() {
+    let mut program = match parser.parse_program() {
         Ok(program) => program,
         Err(e) => e.report(),
     };
@@ -159,6 +161,11 @@ fn main() {
         }
         fs::write(output_path, format!("{program}")).expect("failed to write ast.");
         return;
+    }
+
+    let mut type_inferrer = TypeInferrer::new();
+    if let Err(e) = type_inferrer.infer(&mut program) {
+        e.report();
     }
 
     let mut translator = Translator::new();

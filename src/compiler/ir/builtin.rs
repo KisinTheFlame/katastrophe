@@ -1,20 +1,21 @@
 use std::fs;
 
-use super::{
-    err::{IrError, IrErrorKind},
-    scope::{Scope, Tag},
-};
+use crate::compiler::{err::CompileError, scope::Tag};
 
-pub fn init_builtin_scope(scope: &mut Scope, code_builder: &mut String) -> Result<(), IrError> {
+use super::{err::IrError, instruction::IrScope};
+
+pub fn init_builtin_scope(
+    scope: &mut IrScope,
+    code_builder: &mut String,
+) -> Result<(), CompileError> {
     scope.enter(Tag::Builtin);
-    let builtin = fs::read_to_string("static/builtin.ll").or(Err(IrError {
-        kind: IrErrorKind::BuiltinFileNotExist,
-    }))?;
+    let builtin = fs::read_to_string("static/builtin.ll")
+        .or::<CompileError>(Err(IrError::BuiltinFileNotExist.into()))?;
     code_builder.push_str(&builtin);
     Ok(())
 }
 
-pub fn deinit_builtin_scope(scope: &mut Scope) -> Result<(), IrError> {
+pub fn deinit_builtin_scope(scope: &mut IrScope) -> Result<(), CompileError> {
     scope.leave(Tag::Builtin)?;
     Ok(())
 }

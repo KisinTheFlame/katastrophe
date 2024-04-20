@@ -1,11 +1,11 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    compiler::syntax::ast::Type,
+    compiler::{scope::Scope, syntax::ast::Type},
     util::pretty_format::{indent, PrettyFormat},
 };
 
-use super::err::IrError;
+pub type IrScope = Scope<(Value, IrType)>;
 
 #[derive(Clone)]
 pub enum IrType {
@@ -18,15 +18,21 @@ pub enum IrType {
     },
 }
 
-impl TryFrom<Type> for IrType {
-    type Error = IrError;
-
-    fn try_from(value: Type) -> Result<Self, Self::Error> {
-        let result = match value {
+impl From<Type> for IrType {
+    fn from(value: Type) -> Self {
+        match value {
             Type::Void => IrType::Void,
             Type::I32 => IrType::I32,
-        };
-        Ok(result)
+            Type::Bool => IrType::Bool,
+            Type::Function {
+                return_type,
+                parameter_types,
+            } => IrType::Function {
+                return_type: Box::new(IrType::from(*return_type)),
+                parameter_types: parameter_types.into_iter().map(IrType::from).collect(),
+            },
+            Type::Unknown => unimplemented!(),
+        }
     }
 }
 
@@ -39,7 +45,7 @@ impl Display for IrType {
             IrType::Function {
                 return_type: _,
                 parameter_types: _,
-            } => return Err(fmt::Error),
+            } => panic!("should never print function type"),
         };
         write!(f, "{s}")
     }
@@ -118,28 +124,28 @@ pub enum Instruction {
         data_type: IrType,
         value: Value,
     },
+    ReturnVoid,
     Return {
         data_type: IrType,
         value: Value,
     },
     Batch(Vec<Instruction>),
     Definition(IrFunctionPrototype, Vec<Value>, Box<Instruction>),
-    Bitcast {
-        from: Value,
-        to: Value,
-    },
     Binary {
         operator: IrBinaryOpcode,
+        data_type: IrType,
         result: Value,
         left: Value,
         right: Value,
     },
-    Allocate(Value),
+    Allocate(Value, IrType),
     Load {
+        data_type: IrType,
         from: Value,
         to: Value,
     },
     Store {
+        data_type: IrType,
         from: Value,
         to: Value,
     },
@@ -236,6 +242,9 @@ impl PrettyFormat for Instruction {
             } => {
                 writeln!(f, "{indentation}{lvalue} = global {data_type} {value}")
             }
+            Instruction::ReturnVoid => {
+                writeln!(f, "{indentation}ret void")
+            }
             Instruction::Return { data_type, value } => {
                 writeln!(f, "{indentation}ret {data_type} {value}")
             }
@@ -246,25 +255,34 @@ impl PrettyFormat for Instruction {
                 Ok(())
             }
             Instruction::Definition(_, _, _) => self.format_definition(f, indentation_num),
-            Instruction::Bitcast { from, to } => {
-                writeln!(f, "{indentation}{to} = bitcast i32 {from} to i32")
-            }
             Instruction::Binary {
                 operator,
+                data_type,
                 result,
                 left,
                 right,
             } => {
-                writeln!(f, "{indentation}{result} = {operator} i32 {left}, {right}")
+                writeln!(
+                    f,
+                    "{indentation}{result} = {operator} {data_type} {left}, {right}"
+                )
             }
-            Instruction::Allocate(pointer) => {
-                writeln!(f, "{indentation}{pointer} = alloca i32")
+            Instruction::Allocate(pointer, data_type) => {
+                writeln!(f, "{indentation}{pointer} = alloca {data_type}")
             }
-            Instruction::Load { from, to } => {
-                writeln!(f, "{indentation}{to} = load i32, ptr {from}")
+            Instruction::Load {
+                data_type,
+                from,
+                to,
+            } => {
+                writeln!(f, "{indentation}{to} = load {data_type}, ptr {from}")
             }
-            Instruction::Store { from, to } => {
-                writeln!(f, "{indentation}store i32 {from}, ptr {to}")
+            Instruction::Store {
+                data_type,
+                from,
+                to,
+            } => {
+                writeln!(f, "{indentation}store {data_type} {from}, ptr {to}")
             }
             Instruction::Call {
                 receiver: _,
