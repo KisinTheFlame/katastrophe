@@ -163,7 +163,7 @@ impl Translator {
                     operator: IrBinaryOpcode::Xor,
                     data_type,
                     result: result.clone(),
-                    left: Value::Immediate(mask),
+                    left: Value::ImmediateI32(mask),
                     right: expression_value,
                 }
             }
@@ -171,7 +171,7 @@ impl Translator {
                 operator: IrBinaryOpcode::Subtract,
                 data_type,
                 result: result.clone(),
-                left: Value::Immediate(0),
+                left: Value::ImmediateI32(0),
                 right: expression_value,
             },
         };
@@ -204,9 +204,12 @@ impl Translator {
                 },
             ),
             Expression::IntLiteral(literal) => {
-                Ok((Instruction::NoOperation, Value::Immediate(literal)))
+                Ok((Instruction::NoOperation, Value::ImmediateI32(literal)))
             }
             Expression::FloatLiteral(_) => todo!(),
+            Expression::BoolLiteral(literal) => {
+                Ok((Instruction::NoOperation, Value::ImmediateBool(literal)))
+            }
             Expression::Unary(operator, sub_type, expression) => {
                 self.translate_unary_expression(&operator, &sub_type, *expression)
             }

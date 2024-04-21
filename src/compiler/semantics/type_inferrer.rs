@@ -48,6 +48,7 @@ impl TypeInferrer {
             }
             Expression::IntLiteral(_) => Type::I32,
             Expression::FloatLiteral(_) => todo!(),
+            Expression::BoolLiteral(_) => Type::Bool,
             Expression::Unary(_, _, _) => todo!(),
             Expression::Binary(operator, sub_type, left, right) => {
                 let left_type = self.infer_expression(left)?;

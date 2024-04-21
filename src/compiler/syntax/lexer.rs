@@ -43,7 +43,7 @@ impl Lexer {
         if let Some(token) = self.reader.peek() {
             let token = match token {
                 '0'..='9' => self.digest_number()?,
-                'a'..='z' | 'A'..='Z' | '_' => self.digest_identifier_or_keyword()?,
+                'a'..='z' | 'A'..='Z' | '_' => self.digest_identifier_or_keyword_or_bool()?,
                 _ => self.digest_symbol()?,
             };
             self.next_token = Some(token);
@@ -79,7 +79,7 @@ impl Lexer {
         }
     }
 
-    fn digest_identifier_or_keyword(&mut self) -> Result<Token, LexError> {
+    fn digest_identifier_or_keyword_or_bool(&mut self) -> Result<Token, LexError> {
         let mut identifier = String::new();
         while let Some(c) = self.reader.peek() {
             if c.is_ascii_whitespace() {
@@ -101,10 +101,16 @@ impl Lexer {
                 kind: LexErrorKind::UnexpectedEOF,
             });
         }
-        let token = if Keyword::validate(&identifier) {
-            Token::Keyword(Keyword::from(&identifier).unwrap())
-        } else {
-            Token::Identifier(identifier)
+        let token = match identifier.as_str() {
+            "true" => Token::BoolLiteral(true),
+            "false" => Token::BoolLiteral(false),
+            str => {
+                if Keyword::validate(str) {
+                    Token::Keyword(Keyword::from(str).unwrap())
+                } else {
+                    Token::Identifier(identifier)
+                }
+            }
         };
         Ok(token)
     }
