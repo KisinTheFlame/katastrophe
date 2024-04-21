@@ -140,7 +140,7 @@ pub enum Instruction {
     },
     ReturnVoid,
     Return {
-        data_type: IrType,
+        return_type: IrType,
         value: Value,
     },
     Batch(Vec<Instruction>),
@@ -259,7 +259,10 @@ impl PrettyFormat for Instruction {
             Instruction::ReturnVoid => {
                 writeln!(f, "{indentation}ret void")
             }
-            Instruction::Return { data_type, value } => {
+            Instruction::Return {
+                return_type: data_type,
+                value,
+            } => {
                 writeln!(f, "{indentation}ret {data_type} {value}")
             }
             Instruction::Batch(instructions) => {

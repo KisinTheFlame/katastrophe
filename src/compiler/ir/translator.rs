@@ -366,10 +366,22 @@ impl Translator {
             return Ok(Instruction::ReturnVoid);
         };
         let (expression_instructions, expression) = self.translate_expression(return_value)?;
+        let function_name = self.scope.get_current_function_name()?;
+        let Some((_, function_type)) = self.scope.lookup_symbol(&function_name)? else {
+            return Err(IrError::UndeclaredIdentifier(function_name).into());
+        };
+        let IrType::Function {
+            return_type,
+            parameter_types: _,
+        } = function_type
+        else {
+            return Err(IrError::MismatchedType.into());
+        };
+        let return_type = *return_type;
         let instructions = vec![
             expression_instructions,
             Instruction::Return {
-                data_type: IrType::I32,
+                return_type,
                 value: expression,
             },
         ];
