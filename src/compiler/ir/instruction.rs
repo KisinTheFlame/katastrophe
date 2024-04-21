@@ -277,9 +277,9 @@ impl PrettyFormat for Instruction {
                 writeln!(f, "{indentation}ret {data_type} {value}")
             }
             Instruction::Batch(instructions) => {
-                for instruction in instructions {
-                    instruction.pretty_format(f, indentation_num)?;
-                }
+                instructions
+                    .iter()
+                    .try_for_each(|instruction| instruction.pretty_format(f, indentation_num))?;
                 Ok(())
             }
             Instruction::Definition(_, _, _) => self.format_definition(f, indentation_num),

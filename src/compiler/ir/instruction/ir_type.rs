@@ -51,3 +51,23 @@ impl Display for IrType {
         write!(f, "{s}")
     }
 }
+
+impl PartialEq for IrType {
+    fn eq(&self, other: &Self) -> bool {
+        use IrType::{Bool, Function, Void, I32};
+        match (self, other) {
+            (Void, Void) | (I32, I32) | (Bool, Bool) => true,
+            (
+                Function {
+                    return_type: r1,
+                    parameter_types: p1,
+                },
+                Function {
+                    return_type: r2,
+                    parameter_types: p2,
+                },
+            ) => r1 == r2 && p1 == p2,
+            (_, _) => false,
+        }
+    }
+}

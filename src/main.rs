@@ -175,7 +175,7 @@ fn main() {
     }
 
     let mut translator = Translator::new();
-    let ir = match translator.translate(program) {
+    let ir = match translator.translate(&program) {
         Ok(ir) => ir,
         Err(e) => e.report(),
     };

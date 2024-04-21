@@ -21,10 +21,9 @@ impl PrettyFormat for Program {
         f: &mut std::fmt::Formatter,
         indentation_num: usize,
     ) -> std::fmt::Result {
-        for statement in &self.statements {
-            statement.pretty_format(f, indentation_num)?;
-        }
-        Ok(())
+        self.statements
+            .iter()
+            .try_for_each(|statement| statement.pretty_format(f, indentation_num))
     }
 }
 
