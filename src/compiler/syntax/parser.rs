@@ -115,28 +115,19 @@ impl Parser {
         }
     }
 
-    fn parse_integer_literal(&mut self) -> Result<Expression, ParseError> {
-        if let Some(Token::IntLiteral(integer)) = self.lexer.peek() {
-            let integer = *integer;
-            self.lexer.next();
-            Ok(Expression::IntLiteral(integer))
-        } else {
-            Err(ParseError {
-                kind: ParseErrorKind::InternalMess("should be an integer"),
-            })
-        }
+    fn parse_integer_literal(&mut self, literal: i32) -> Expression {
+        self.lexer.next();
+        Expression::IntLiteral(literal)
     }
 
-    fn parse_float_literal(&mut self) -> Result<Expression, ParseError> {
-        if let Some(Token::FloatLiteral(float)) = self.lexer.peek() {
-            let float = *float;
-            self.lexer.next();
-            Ok(Expression::FloatLiteral(float))
-        } else {
-            Err(ParseError {
-                kind: ParseErrorKind::InternalMess("should be an integer"),
-            })
-        }
+    fn parse_float_literal(&mut self, literal: f64) -> Expression {
+        self.lexer.next();
+        Expression::FloatLiteral(literal)
+    }
+
+    fn parse_bool_literal(&mut self, literal: bool) -> Expression {
+        self.lexer.next();
+        Expression::BoolLiteral(literal)
     }
 
     fn parse_unary_expression(&mut self) -> Result<Expression, ParseError> {
@@ -170,8 +161,18 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expression, ParseError> {
         match self.lexer.peek() {
             Some(Token::Identifier(_)) => Ok(self.parse_identifier()?),
-            Some(Token::IntLiteral(_)) => Ok(self.parse_integer_literal()?),
-            Some(Token::FloatLiteral(_)) => Ok(self.parse_float_literal()?),
+            Some(Token::IntLiteral(literal)) => {
+                let literal = *literal;
+                Ok(self.parse_integer_literal(literal))
+            }
+            Some(Token::FloatLiteral(literal)) => {
+                let literal = *literal;
+                Ok(self.parse_float_literal(literal))
+            }
+            Some(Token::BoolLiteral(literal)) => {
+                let literal = *literal;
+                Ok(self.parse_bool_literal(literal))
+            }
             Some(Token::Symbol(Symbol::LeftParentheses)) => {
                 Ok(self.parse_parentheses_expression()?)
             }

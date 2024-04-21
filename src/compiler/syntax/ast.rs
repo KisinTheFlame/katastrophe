@@ -231,6 +231,7 @@ pub enum Expression {
 
     IntLiteral(i32),
     FloatLiteral(f64),
+    BoolLiteral(bool),
 
     Unary(UnaryOperator, Type, Box<Expression>),
     Binary(BinaryOperator, Type, Box<Expression>, Box<Expression>),
@@ -253,6 +254,9 @@ impl PrettyFormat for Expression {
                 writeln!(f, "{indentation}{literal}")?;
             }
             Expression::FloatLiteral(literal) => {
+                writeln!(f, "{indentation}{literal}")?;
+            }
+            Expression::BoolLiteral(literal) => {
                 writeln!(f, "{indentation}{literal}")?;
             }
             Expression::Unary(operator, _, expression) => {

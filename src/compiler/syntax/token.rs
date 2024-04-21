@@ -13,7 +13,7 @@ pub enum Keyword {
     As,
 }
 
-static KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
+static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
     HashMap::from(
         [
             ("def", Keyword::Define),
@@ -25,16 +25,16 @@ static KEYWORD_MAP: Lazy<HashMap<String, Keyword>> = Lazy::new(|| {
             ("while", Keyword::While),
             ("as", Keyword::As),
         ]
-        .map(|(s, k)| (s.to_string(), k)),
+        .map(|(s, k)| (s, k)),
     )
 });
 
 impl Keyword {
-    pub fn validate(s: &String) -> bool {
+    pub fn validate(s: &str) -> bool {
         KEYWORD_MAP.contains_key(s)
     }
 
-    pub fn from(s: &String) -> Option<Keyword> {
+    pub fn from(s: &str) -> Option<Keyword> {
         KEYWORD_MAP.get(s).cloned()
     }
 }
@@ -81,6 +81,7 @@ pub enum Token {
     Identifier(String),
     IntLiteral(i32),
     FloatLiteral(f64),
+    BoolLiteral(bool),
 
     Keyword(Keyword),
 

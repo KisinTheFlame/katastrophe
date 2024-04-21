@@ -54,7 +54,8 @@ impl Display for IrType {
 #[derive(Clone)]
 pub enum Value {
     Register(String),
-    Immediate(i32),
+    ImmediateI32(i32),
+    ImmediateBool(bool),
     StackPointer(String),
     GlobalPointer(String),
     Parameter(String),
@@ -68,7 +69,11 @@ impl Display for Value {
             Value::Register(id) | Value::StackPointer(id) | Value::Parameter(id) => {
                 write!(f, "%{id}")
             }
-            Value::Immediate(value) => write!(f, "{value}"),
+            Value::ImmediateI32(value) => write!(f, "{value}"),
+            Value::ImmediateBool(value) => {
+                let value = i32::from(*value);
+                write!(f, "{value}")
+            }
             Value::GlobalPointer(id) | Value::Function(id) => write!(f, "@{id}"),
             Value::Label(id) => write!(f, "{id}"),
         }
