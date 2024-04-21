@@ -86,6 +86,10 @@ pub enum IrBinaryOpcode {
     Multiply,
     DivideSigned,
 
+    And,
+    Or,
+    Xor,
+
     Compare(Comparator),
 }
 
@@ -96,6 +100,9 @@ impl Display for IrBinaryOpcode {
             IrBinaryOpcode::Subtract => write!(f, "sub"),
             IrBinaryOpcode::Multiply => write!(f, "mul"),
             IrBinaryOpcode::DivideSigned => write!(f, "sdiv"),
+            IrBinaryOpcode::And => write!(f, "and"),
+            IrBinaryOpcode::Or => write!(f, "or"),
+            IrBinaryOpcode::Xor => write!(f, "xor"),
             IrBinaryOpcode::Compare(comparator) => write!(f, "icmp {comparator}"),
         }
     }
@@ -103,17 +110,24 @@ impl Display for IrBinaryOpcode {
 
 pub enum Comparator {
     Equal,
+    NotEqual,
     SignedLessThan,
+    SignedLessThanEqual,
     SignedGreaterThan,
+    SignedGreaterThanEqual,
 }
 
 impl Display for Comparator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Comparator::Equal => write!(f, "eq"),
-            Comparator::SignedLessThan => write!(f, "slt"),
-            Comparator::SignedGreaterThan => write!(f, "sgt"),
-        }
+        let comparator = match self {
+            Comparator::Equal => "eq",
+            Comparator::NotEqual => "ne",
+            Comparator::SignedLessThan => "slt",
+            Comparator::SignedLessThanEqual => "sle",
+            Comparator::SignedGreaterThan => "sgt",
+            Comparator::SignedGreaterThanEqual => "sge",
+        };
+        write!(f, "{comparator}")
     }
 }
 

@@ -3,7 +3,7 @@ use crate::compiler::{
     scope::Tag,
     syntax::ast::{
         BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
-        Parameter, Program, Statement, Type, Variable,
+        Parameter, Program, Statement, Type, UnaryOperator, Variable,
     },
 };
 
@@ -110,16 +110,18 @@ impl Translator {
             BinaryOperator::Subtract => IrBinaryOpcode::Subtract,
             BinaryOperator::Multiply => IrBinaryOpcode::Multiply,
             BinaryOperator::Divide => IrBinaryOpcode::DivideSigned,
-            BinaryOperator::LogicalAnd => todo!(),
-            BinaryOperator::LogicalOr => todo!(),
-            BinaryOperator::BitAnd => todo!(),
-            BinaryOperator::BitOr => todo!(),
+            BinaryOperator::LogicalAnd | BinaryOperator::BitAnd => IrBinaryOpcode::And,
+            BinaryOperator::LogicalOr | BinaryOperator::BitOr => IrBinaryOpcode::Or,
             BinaryOperator::Equal => IrBinaryOpcode::Compare(Comparator::Equal),
-            BinaryOperator::NotEqual => todo!(),
+            BinaryOperator::NotEqual => IrBinaryOpcode::Compare(Comparator::NotEqual),
             BinaryOperator::LessThan => IrBinaryOpcode::Compare(Comparator::SignedLessThan),
-            BinaryOperator::LessThanEqual => todo!(),
+            BinaryOperator::LessThanEqual => {
+                IrBinaryOpcode::Compare(Comparator::SignedLessThanEqual)
+            }
             BinaryOperator::GreaterThan => IrBinaryOpcode::Compare(Comparator::SignedGreaterThan),
-            BinaryOperator::GreaterThanEqual => todo!(),
+            BinaryOperator::GreaterThanEqual => {
+                IrBinaryOpcode::Compare(Comparator::SignedGreaterThanEqual)
+            }
         };
 
         let data_type = IrType::from(sub_type.clone());
@@ -136,6 +138,46 @@ impl Translator {
                     right,
                 },
             ]),
+            result,
+        ))
+    }
+
+    fn translate_unary_expression(
+        &mut self,
+        operator: &UnaryOperator,
+        sub_type: &Type,
+        expression: Expression,
+    ) -> Result<(Instruction, Value), CompileError> {
+        let (expression_instruction, expression_value) = self.translate_expression(expression)?;
+
+        let result = self.declare_anonymous();
+        let data_type = IrType::from(sub_type.clone());
+        let unary_instruction = match operator {
+            UnaryOperator::LogicalNot | UnaryOperator::BitNot => {
+                let mask = match data_type {
+                    IrType::Bool => 1,
+                    IrType::I32 => -1i32,
+                    _ => return Err(IrError::MismatchedType.into()),
+                };
+                Instruction::Binary {
+                    operator: IrBinaryOpcode::Xor,
+                    data_type,
+                    result: result.clone(),
+                    left: Value::Immediate(mask),
+                    right: expression_value,
+                }
+            }
+            UnaryOperator::Negative => Instruction::Binary {
+                operator: IrBinaryOpcode::Subtract,
+                data_type,
+                result: result.clone(),
+                left: Value::Immediate(0),
+                right: expression_value,
+            },
+        };
+
+        Ok((
+            Instruction::Batch(vec![expression_instruction, unary_instruction]),
             result,
         ))
     }
@@ -165,7 +207,9 @@ impl Translator {
                 Ok((Instruction::NoOperation, Value::Immediate(literal)))
             }
             Expression::FloatLiteral(_) => todo!(),
-            Expression::Unary(_, _, _) => todo!(),
+            Expression::Unary(operator, sub_type, expression) => {
+                self.translate_unary_expression(&operator, &sub_type, *expression)
+            }
             Expression::Binary(operator, expression_type, left, right) => {
                 self.translate_binary_expression(&operator, &expression_type, *left, *right)
             }
