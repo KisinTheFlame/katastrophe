@@ -5,7 +5,7 @@ use crate::compiler::{
     scope::{Scope, Tag},
     syntax::ast::{
         BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
-        Parameter, Program, Statement, Type, Variable,
+        Parameter, Program, Statement, Type, UnaryOperator, Variable,
     },
 };
 
@@ -14,6 +14,7 @@ use super::err::{SemanticError, TypeError};
 type TypeScope = Scope<Type>;
 
 pub struct TypeInferrer {
+    unary_operation_type_map: HashMap<(UnaryOperator, Type), Type>,
     binary_operation_type_map: HashMap<(BinaryOperator, Type, Type), Type>,
     scope: TypeScope,
 }
@@ -22,6 +23,7 @@ impl TypeInferrer {
     #[must_use]
     pub fn new() -> TypeInferrer {
         TypeInferrer {
+            unary_operation_type_map: HashMap::new(),
             binary_operation_type_map: HashMap::new(),
             scope: TypeScope::new(),
         }
@@ -34,7 +36,17 @@ impl TypeInferrer {
         self.binary_operation_type_map
             .get(index)
             .cloned()
-            .ok_or(TypeError::NoSuchOperator.into())
+            .ok_or(TypeError::UndefinedOperation.into())
+    }
+
+    fn infer_unary_operation_type(
+        &self,
+        index: &(UnaryOperator, Type),
+    ) -> Result<Type, CompileError> {
+        self.unary_operation_type_map
+            .get(index)
+            .cloned()
+            .ok_or(TypeError::UndefinedOperation.into())
     }
 
     fn infer_expression(&self, expression: &mut Expression) -> Result<Type, CompileError> {
@@ -49,13 +61,14 @@ impl TypeInferrer {
             Expression::IntLiteral(_) => Type::I32,
             Expression::FloatLiteral(_) => todo!(),
             Expression::BoolLiteral(_) => Type::Bool,
-            Expression::Unary(_, _, _) => todo!(),
+            Expression::Unary(operator, sub_type, expression) => {
+                *sub_type = self.infer_expression(expression)?;
+                self.infer_unary_operation_type(&(*operator, sub_type.clone()))?
+            }
             Expression::Binary(operator, sub_type, left, right) => {
                 let left_type = self.infer_expression(left)?;
                 let right_type = self.infer_expression(right)?;
-                if *sub_type == Type::Unknown {
-                    *sub_type = left_type.clone();
-                }
+                *sub_type = left_type.clone();
                 self.infer_binary_operation_type(&(operator.clone(), left_type, right_type))?
             }
             Expression::Call(function_id, arguments) => {
@@ -147,6 +160,7 @@ impl TypeInferrer {
             }
             Statement::Let(LetDetail(Variable(identifier, var_type), expression)) => {
                 let expression_type = self.infer_expression(expression)?;
+
                 if *var_type == Type::Unknown {
                     *var_type = expression_type;
                     self.scope.declare(identifier.clone(), var_type.clone())?;
@@ -261,8 +275,18 @@ impl TypeInferrer {
         }
     }
 
+    fn init_unary_operator_type_map(&mut self) {
+        self.unary_operation_type_map
+            .insert((UnaryOperator::BitNot, Type::I32), Type::I32);
+        self.unary_operation_type_map
+            .insert((UnaryOperator::LogicalNot, Type::Bool), Type::Bool);
+        self.unary_operation_type_map
+            .insert((UnaryOperator::Negative, Type::I32), Type::I32);
+    }
+
     /// # Errors
     pub fn infer(&mut self, program: &mut Program) -> Result<(), CompileError> {
+        self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();
         self.scope.enter(Tag::Global);
         self.pre_scan_global_items(program)?;

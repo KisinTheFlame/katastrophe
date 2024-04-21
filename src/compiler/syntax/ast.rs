@@ -115,6 +115,7 @@ pub trait Operator {
     fn is_left_associative(&self) -> bool;
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnaryOperator {
     LogicalNot,
     BitNot,
