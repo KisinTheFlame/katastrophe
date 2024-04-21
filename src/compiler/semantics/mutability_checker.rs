@@ -2,8 +2,11 @@ use crate::compiler::{
     err::CompileError,
     scope::{Scope, Tag},
     syntax::ast::{
-        BinaryOperator, DefineDetail, Expression, FunctionPrototype, LetDetail, Mutability,
-        Parameter, Program, Statement, Variable,
+        crumb::{FunctionPrototype, Mutability, Parameter, Variable},
+        expression::Expression,
+        operator::Binary,
+        statement::{DefineDetail, LetDetail, Statement},
+        Program,
     },
 };
 
@@ -81,9 +84,7 @@ impl MutabilityChecker {
                 Ok(())
             }
             Statement::Expression(expression) => match expression {
-                Expression::Binary(BinaryOperator::Assign, _, lvalue, _) => {
-                    self.check_lvalue(lvalue)
-                }
+                Expression::Binary(Binary::Assign, _, lvalue, _) => self.check_lvalue(lvalue),
                 _ => Ok(()),
             },
         }

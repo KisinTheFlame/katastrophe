@@ -4,8 +4,12 @@ use crate::compiler::{
     err::CompileError,
     scope::{Scope, Tag},
     syntax::ast::{
-        BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
-        Parameter, Program, Statement, Type, UnaryOperator, Variable,
+        crumb::{FunctionPrototype, Parameter, Variable},
+        expression::Expression,
+        operator::{Binary, Unary},
+        statement::{DefineDetail, IfDetail, LetDetail, Statement},
+        ty::Type,
+        Program,
     },
 };
 
@@ -14,8 +18,8 @@ use super::err::{SemanticError, TypeError};
 type TypeScope = Scope<Type>;
 
 pub struct TypeInferrer {
-    unary_operation_type_map: HashMap<(UnaryOperator, Type), Type>,
-    binary_operation_type_map: HashMap<(BinaryOperator, Type, Type), Type>,
+    unary_operation_type_map: HashMap<(Unary, Type), Type>,
+    binary_operation_type_map: HashMap<(Binary, Type, Type), Type>,
     scope: TypeScope,
 }
 
@@ -31,7 +35,7 @@ impl TypeInferrer {
 
     fn infer_binary_operation_type(
         &self,
-        index: &(BinaryOperator, Type, Type),
+        index: &(Binary, Type, Type),
     ) -> Result<Type, CompileError> {
         self.binary_operation_type_map
             .get(index)
@@ -39,10 +43,7 @@ impl TypeInferrer {
             .ok_or(TypeError::UndefinedOperation.into())
     }
 
-    fn infer_unary_operation_type(
-        &self,
-        index: &(UnaryOperator, Type),
-    ) -> Result<Type, CompileError> {
+    fn infer_unary_operation_type(&self, index: &(Unary, Type)) -> Result<Type, CompileError> {
         self.unary_operation_type_map
             .get(index)
             .cloned()
@@ -98,7 +99,7 @@ impl TypeInferrer {
                 self.infer_unary_operation_type(&(*operator, sub_type.clone()))?
             }
             Expression::Binary(operator, sub_type, left, right) => {
-                if *operator == BinaryOperator::Assign {
+                if *operator == Binary::Assign {
                     self.infer_assignment(sub_type, left, right)?
                 } else {
                     let left_type = self.infer_expression(left)?;
@@ -289,28 +290,28 @@ impl TypeInferrer {
 
     fn init_binary_operator_type_map(&mut self) {
         for operator in [
-            BinaryOperator::Add,
-            BinaryOperator::Subtract,
-            BinaryOperator::Multiply,
-            BinaryOperator::Divide,
+            Binary::Add,
+            Binary::Subtract,
+            Binary::Multiply,
+            Binary::Divide,
         ] {
             self.binary_operation_type_map
                 .insert((operator, Type::I32, Type::I32), Type::I32);
         }
 
         for operator in [
-            BinaryOperator::Equal,
-            BinaryOperator::NotEqual,
-            BinaryOperator::LessThan,
-            BinaryOperator::LessThanEqual,
-            BinaryOperator::GreaterThan,
-            BinaryOperator::GreaterThanEqual,
+            Binary::Equal,
+            Binary::NotEqual,
+            Binary::LessThan,
+            Binary::LessThanEqual,
+            Binary::GreaterThan,
+            Binary::GreaterThanEqual,
         ] {
             self.binary_operation_type_map
                 .insert((operator, Type::I32, Type::I32), Type::Bool);
         }
 
-        for operator in [BinaryOperator::LogicalAnd, BinaryOperator::LogicalOr] {
+        for operator in [Binary::LogicalAnd, Binary::LogicalOr] {
             self.binary_operation_type_map
                 .insert((operator, Type::Bool, Type::Bool), Type::Bool);
         }
@@ -318,11 +319,11 @@ impl TypeInferrer {
 
     fn init_unary_operator_type_map(&mut self) {
         self.unary_operation_type_map
-            .insert((UnaryOperator::BitNot, Type::I32), Type::I32);
+            .insert((Unary::BitNot, Type::I32), Type::I32);
         self.unary_operation_type_map
-            .insert((UnaryOperator::LogicalNot, Type::Bool), Type::Bool);
+            .insert((Unary::LogicalNot, Type::Bool), Type::Bool);
         self.unary_operation_type_map
-            .insert((UnaryOperator::Negative, Type::I32), Type::I32);
+            .insert((Unary::Negative, Type::I32), Type::I32);
     }
 
     /// # Errors

@@ -1,5 +1,5 @@
 use crate::{
-    compiler::{err::InnerCompilerError, syntax::ast::Type},
+    compiler::{err::InnerCompilerError, syntax::ast::ty::Type},
     util::reportable_error::ReportableError,
 };
 
