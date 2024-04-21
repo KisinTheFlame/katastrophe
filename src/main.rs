@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::{env, fs};
 
+use compiler::semantics::mutability_checker::MutabilityChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;
 
 use crate::compiler::ir::translator::Translator;
@@ -165,6 +166,11 @@ fn main() {
 
     let mut type_inferrer = TypeInferrer::new();
     if let Err(e) = type_inferrer.infer(&mut program) {
+        e.report();
+    }
+
+    let mut mutability_checker: MutabilityChecker = MutabilityChecker::new();
+    if let Err(e) = mutability_checker.check_program(&program) {
         e.report();
     }
 

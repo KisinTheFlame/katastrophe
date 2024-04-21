@@ -9,6 +9,7 @@ pub enum IrError {
 
     UnknownType(Type),
     MismatchedType,
+    InvalidLValue,
 
     BuiltinFileNotExist,
 }
@@ -29,6 +30,9 @@ impl ReportableError for IrError {
             }
             IrError::MismatchedType => {
                 panic!("mismatched type.");
+            }
+            IrError::InvalidLValue => {
+                panic!("invalid lvalue.");
             }
             IrError::BuiltinFileNotExist => {
                 panic!("builtin file not exist.");

@@ -1,7 +1,7 @@
 use super::{
     ast::{
-        BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail, Operator,
-        Parameter, Program, Statement, Type, UnaryOperator, Variable,
+        BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
+        Mutability, Operator, Parameter, Program, Statement, Type, UnaryOperator, Variable,
     },
     err::{ParseError, ParseErrorKind},
     lexer::Lexer,
@@ -205,7 +205,18 @@ impl Parser {
             Symbol::LessThanEqual => Some(BinaryOperator::LessThanEqual),
             Symbol::GreaterThan => Some(BinaryOperator::GreaterThan),
             Symbol::GreaterThanEqual => Some(BinaryOperator::GreaterThanEqual),
-            _ => None,
+            Symbol::Assign => Some(BinaryOperator::Assign),
+            Symbol::LogicalNot
+            | Symbol::BitNot
+            | Symbol::LeftParentheses
+            | Symbol::RightParentheses
+            | Symbol::LeftBracket
+            | Symbol::RightBracket
+            | Symbol::LeftBrace
+            | Symbol::RightBrace
+            | Symbol::Comma
+            | Symbol::Semicolon
+            | Symbol::Arrow => None,
         }
     }
 
@@ -236,7 +247,12 @@ impl Parser {
                     Box::new(rhs),
                 ));
             };
-            let rhs = if next_operator.precedence() > current_operator.precedence() {
+            let need_to_associate_with_right = if next_operator.is_left_associative() {
+                next_operator.precedence() > current_operator.precedence()
+            } else {
+                next_operator.precedence() == current_operator.precedence()
+            };
+            let rhs = if need_to_associate_with_right {
                 self.parse_binary_expression_rhs(next_operator.precedence(), rhs)?
             } else {
                 rhs
@@ -360,7 +376,7 @@ impl Parser {
         if self.expect_symbol(&Symbol::Arrow) {
             self.parse_type()
         } else {
-            Ok(Type::Void)
+            Ok(Type::Never)
         }
     }
 
@@ -387,6 +403,11 @@ impl Parser {
 
     fn parse_let_statement(&mut self) -> Result<LetDetail, ParseError> {
         self.digest_keyword(&Keyword::Let)?;
+        let mutability = if self.expect_keyword(&Keyword::Mut) {
+            Mutability::Mutable
+        } else {
+            Mutability::Immutable
+        };
         let lvalue = self.parse_plain_identifier()?;
         let lvalue_type = if self.expect_keyword(&Keyword::As) {
             self.parse_type()?
@@ -396,7 +417,10 @@ impl Parser {
         self.digest_symbol(&Symbol::Assign)?;
         let expression = self.parse_expression()?;
         self.digest_symbol(&Symbol::Semicolon)?;
-        Ok(LetDetail(Variable(lvalue, lvalue_type), expression))
+        Ok(LetDetail(
+            Variable(lvalue, lvalue_type, mutability),
+            expression,
+        ))
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {

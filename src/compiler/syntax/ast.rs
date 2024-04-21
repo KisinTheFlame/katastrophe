@@ -8,7 +8,7 @@ use super::err::{ParseError, ParseErrorKind};
 #[derive(Clone)]
 pub enum Type {
     Unknown,
-    Void,
+    Never,
     I32,
     Bool,
     Function {
@@ -33,7 +33,7 @@ impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Type::Unknown, Type::Unknown)
-            | (Type::Void, Type::Void)
+            | (Type::Never, Type::Never)
             | (Type::I32, Type::I32)
             | (Type::Bool, Type::Bool) => true,
             (
@@ -63,7 +63,7 @@ impl Display for Type {
             Type::Unknown => {
                 write!(f, "unknown")?;
             }
-            Type::Void => {
+            Type::Never => {
                 write!(f, "void")?;
             }
             Type::I32 => {
@@ -89,7 +89,7 @@ impl TryFrom<String> for Type {
 
     fn try_from(value: String) -> Result<Type, ParseError> {
         match value.as_str() {
-            "void" => Ok(Type::Void),
+            "void" => Ok(Type::Never),
             "i32" => Ok(Type::I32),
             "bool" => Ok(Type::Bool),
             _ => Err(ParseError {
@@ -166,6 +166,8 @@ pub enum BinaryOperator {
     LessThanEqual,
     GreaterThan,
     GreaterThanEqual,
+
+    Assign,
 }
 
 impl Operator for BinaryOperator {
@@ -182,6 +184,7 @@ impl Operator for BinaryOperator {
             BinaryOperator::BitOr => 6u8,
             BinaryOperator::LogicalAnd => 5u8,
             BinaryOperator::LogicalOr => 4u8,
+            BinaryOperator::Assign => 2u8,
         }
     }
 
@@ -201,6 +204,7 @@ impl Operator for BinaryOperator {
             | BinaryOperator::LessThanEqual
             | BinaryOperator::GreaterThan
             | BinaryOperator::GreaterThanEqual => true,
+            BinaryOperator::Assign => false,
         }
     }
 }
@@ -222,6 +226,7 @@ impl Display for BinaryOperator {
             BinaryOperator::LessThanEqual => "LessThanEqual",
             BinaryOperator::GreaterThan => "GreaterThan",
             BinaryOperator::GreaterThanEqual => "GreaterThanEqual",
+            BinaryOperator::Assign => "Assign",
         };
         write!(f, "{s}")
     }
@@ -280,6 +285,12 @@ impl PrettyFormat for Expression {
     }
 }
 
+impl Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.pretty_format(f, 0)
+    }
+}
+
 pub struct Parameter(pub String);
 
 impl Display for Parameter {
@@ -295,7 +306,22 @@ pub struct FunctionPrototype {
     pub function_type: Type,
 }
 
-pub struct Variable(pub String, pub Type);
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mutability {
+    Mutable,
+    Immutable,
+}
+
+impl Display for Mutability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Mutability::Mutable => write!(f, "mutable"),
+            Mutability::Immutable => write!(f, "immutable"),
+        }
+    }
+}
+
+pub struct Variable(pub String, pub Type, pub Mutability);
 
 pub struct IfDetail {
     pub condition: Expression,
@@ -358,8 +384,8 @@ impl PrettyFormat for Statement {
                 }
             }
             Statement::Let(LetDetail(variable, expression)) => {
-                let Variable(id, var_type) = variable;
-                writeln!(f, "{indentation}Let {id} as {var_type}")?;
+                let Variable(id, var_type, mutability) = variable;
+                writeln!(f, "{indentation}Let {mutability} {id} as {var_type}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }
             Statement::Define(DefineDetail {

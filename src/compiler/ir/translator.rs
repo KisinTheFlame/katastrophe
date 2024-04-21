@@ -3,7 +3,7 @@ use crate::compiler::{
     scope::Tag,
     syntax::ast::{
         BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
-        Parameter, Program, Statement, Type, UnaryOperator, Variable,
+        Mutability, Parameter, Program, Statement, Type, UnaryOperator, Variable,
     },
 };
 
@@ -11,8 +11,8 @@ use super::err::IrError;
 use super::{
     builtin::{deinit_builtin_scope, init_builtin_scope},
     id::{
-        next_anonymous_id, next_function_id, next_global_id, next_label_id, next_mutable_id,
-        next_parameter_id,
+        next_anonymous_id, next_function_id, next_global_id, next_label_id, next_parameter_id,
+        next_variable_id,
     },
     instruction::{
         Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrScope, IrType, Value,
@@ -47,20 +47,42 @@ impl Translator {
         Ok(value)
     }
 
+    fn declare_immutable(
+        &mut self,
+        symbol: String,
+        data_type: IrType,
+    ) -> Result<Value, CompileError> {
+        let id = next_variable_id();
+        let value = Value::Register(format!("v{id}.{symbol}"));
+        self.scope.overwrite(symbol, (value.clone(), data_type))?;
+        Ok(value)
+    }
+
     fn declare_mutable(
         &mut self,
         symbol: String,
         data_type: IrType,
     ) -> Result<Value, CompileError> {
-        let id = next_mutable_id();
+        let id = next_variable_id();
         let value = Value::StackPointer(format!("v{id}.{symbol}"));
-        self.scope.declare(symbol, (value.clone(), data_type))?;
+        self.scope.overwrite(symbol, (value.clone(), data_type))?;
         Ok(value)
     }
 
     fn declare_global(&mut self, symbol: String, data_type: IrType) -> Result<Value, CompileError> {
         let id = next_global_id();
         let value = Value::GlobalPointer(format!("g{id}.{symbol}"));
+        self.scope.declare(symbol, (value.clone(), data_type))?;
+        Ok(value)
+    }
+
+    fn declare_constant(
+        &mut self,
+        symbol: String,
+        data_type: IrType,
+    ) -> Result<Value, CompileError> {
+        let id = next_global_id();
+        let value = Value::GlobalPointer(format!("c{id}.{symbol}"));
         self.scope.declare(symbol, (value.clone(), data_type))?;
         Ok(value)
     }
@@ -101,10 +123,6 @@ impl Translator {
         left: Expression,
         right: Expression,
     ) -> Result<(Instruction, Value), CompileError> {
-        let (left_instruction, left) = self.translate_expression(left)?;
-        let (right_instruction, right) = self.translate_expression(right)?;
-        let result = self.declare_anonymous();
-
         let operator = match operator {
             BinaryOperator::Add => IrBinaryOpcode::Add,
             BinaryOperator::Subtract => IrBinaryOpcode::Subtract,
@@ -122,9 +140,14 @@ impl Translator {
             BinaryOperator::GreaterThanEqual => {
                 IrBinaryOpcode::Compare(Comparator::SignedGreaterThanEqual)
             }
+            BinaryOperator::Assign => return self.translate_assignment(sub_type, &left, right),
         };
 
-        let data_type = IrType::from(sub_type.clone());
+        let (left_instruction, left) = self.translate_expression(left)?;
+        let (right_instruction, right) = self.translate_expression(right)?;
+        let result = self.declare_anonymous();
+
+        let data_type = IrType::from(sub_type);
 
         Ok((
             Instruction::Batch(vec![
@@ -142,6 +165,41 @@ impl Translator {
         ))
     }
 
+    fn translate_lvalue_expression(
+        &mut self,
+        lvalue_expression: &Expression,
+    ) -> Result<Value, CompileError> {
+        let Expression::Identifier(identifier) = lvalue_expression else {
+            return Err(IrError::InvalidLValue.into());
+        };
+        let Some((value, _)) = self.scope.lookup(identifier)? else {
+            return Err(IrError::UndeclaredIdentifier(identifier.clone()).into());
+        };
+        match value {
+            Value::StackPointer(_) | Value::GlobalPointer(_) | Value::Parameter(_) => Ok(value),
+            _ => Err(IrError::InvalidLValue.into()),
+        }
+    }
+
+    fn translate_assignment(
+        &mut self,
+        sub_type: &Type,
+        lvalue: &Expression,
+        expression: Expression,
+    ) -> Result<(Instruction, Value), CompileError> {
+        let lvalue = self.translate_lvalue_expression(lvalue)?;
+        let (expression_instruction, expression) = self.translate_expression(expression)?;
+        let assign_instruction = Instruction::Store {
+            data_type: IrType::from(sub_type),
+            from: expression,
+            to: lvalue,
+        };
+        Ok((
+            Instruction::Batch(vec![expression_instruction, assign_instruction]),
+            Value::Void,
+        ))
+    }
+
     fn translate_unary_expression(
         &mut self,
         operator: UnaryOperator,
@@ -151,7 +209,7 @@ impl Translator {
         let (expression_instruction, expression_value) = self.translate_expression(expression)?;
 
         let result = self.declare_anonymous();
-        let data_type = IrType::from(sub_type.clone());
+        let data_type = IrType::from(sub_type);
         let unary_instruction = match operator {
             UnaryOperator::LogicalNot | UnaryOperator::BitNot => {
                 let mask = match data_type {
@@ -187,12 +245,13 @@ impl Translator {
         expression: Expression,
     ) -> Result<(Instruction, Value), CompileError> {
         match expression {
-            Expression::Identifier(identifier) => self.scope.lookup_symbol(&identifier)?.map_or(
+            Expression::Identifier(identifier) => self.scope.lookup(&identifier)?.map_or(
                 Err(IrError::UndeclaredIdentifier(identifier).into()),
-                |(value, data_type)| {
-                    if let Value::Parameter(_) = value {
+                |(value, data_type)| match value {
+                    Value::Register(_) | Value::Parameter(_) => {
                         Ok((Instruction::NoOperation, value))
-                    } else {
+                    }
+                    Value::StackPointer(_) | Value::GlobalPointer(_) => {
                         let result = self.declare_anonymous();
                         let instruction = Instruction::Load {
                             data_type,
@@ -201,6 +260,7 @@ impl Translator {
                         };
                         Ok((instruction, result))
                     }
+                    _ => panic!(),
                 },
             ),
             Expression::IntLiteral(literal) => {
@@ -218,9 +278,7 @@ impl Translator {
             }
             Expression::Call(function_name, arguments) => {
                 let receiver = self.declare_anonymous();
-                let Some((function_id, function_type)) =
-                    self.scope.lookup_symbol(&function_name)?
-                else {
+                let Some((function_id, function_type)) = self.scope.lookup(&function_name)? else {
                     return Err(IrError::UndeclaredIdentifier(function_name).into());
                 };
                 let IrType::Function {
@@ -336,26 +394,45 @@ impl Translator {
         &mut self,
         let_detail: LetDetail,
     ) -> Result<Instruction, CompileError> {
-        let LetDetail(Variable(identifier, var_type), expression) = let_detail;
-        let data_type = IrType::from(var_type);
+        let LetDetail(Variable(identifier, var_type, mutability), expression) = let_detail;
+        let data_type = IrType::from(&var_type);
         let (expression_instructions, expression) = self.translate_expression(expression)?;
-        let assign_instruction = if self.scope.is_global()? {
-            let lvalue = self.declare_global(identifier, data_type.clone())?;
-            Instruction::Global {
-                lvalue,
-                data_type,
-                value: expression,
+        let assign_instruction = match (self.scope.is_global()?, mutability) {
+            (true, Mutability::Mutable) => {
+                let lvalue = self.declare_global(identifier, data_type.clone())?;
+                Instruction::Global {
+                    lvalue,
+                    data_type,
+                    value: expression,
+                }
             }
-        } else {
-            let lvalue = self.declare_mutable(identifier, data_type.clone())?;
-            Instruction::Batch(vec![
-                Instruction::Allocate(lvalue.clone(), data_type.clone()),
-                Instruction::Store {
+            (true, Mutability::Immutable) => {
+                let lvalue = self.declare_constant(identifier, data_type.clone())?;
+                Instruction::Constant {
+                    lvalue,
+                    data_type,
+                    value: expression,
+                }
+            }
+            (false, Mutability::Mutable) => {
+                let lvalue = self.declare_mutable(identifier, data_type.clone())?;
+                Instruction::Batch(vec![
+                    Instruction::Allocate(lvalue.clone(), data_type.clone()),
+                    Instruction::Store {
+                        data_type,
+                        from: expression,
+                        to: lvalue,
+                    },
+                ])
+            }
+            (false, Mutability::Immutable) => {
+                let lvalue = self.declare_immutable(identifier, data_type.clone())?;
+                Instruction::Copy {
                     data_type,
                     from: expression,
                     to: lvalue,
-                },
-            ])
+                }
+            }
         };
         let instructions = vec![expression_instructions, assign_instruction];
         Ok(Instruction::Batch(instructions))
@@ -369,8 +446,8 @@ impl Translator {
             return Ok(Instruction::ReturnVoid);
         };
         let (expression_instructions, expression) = self.translate_expression(return_value)?;
-        let function_name = self.scope.get_current_function_name()?;
-        let Some((_, function_type)) = self.scope.lookup_symbol(&function_name)? else {
+        let function_name = self.scope.current_function()?;
+        let Some((_, function_type)) = self.scope.lookup(&function_name)? else {
             return Err(IrError::UndeclaredIdentifier(function_name).into());
         };
         let IrType::Function {
@@ -462,7 +539,7 @@ impl Translator {
     }
 
     fn generate_main(&mut self) -> Result<String, CompileError> {
-        let Some((main_id, _)) = self.scope.lookup_symbol(&String::from("main"))? else {
+        let Some((main_id, _)) = self.scope.lookup(&String::from("main"))? else {
             return Err(IrError::UndefinedMain.into());
         };
         let template = format!(
