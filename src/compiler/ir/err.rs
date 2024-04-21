@@ -1,13 +1,9 @@
-use crate::{
-    compiler::{err::InnerCompilerError, syntax::ast::Type},
-    util::reportable_error::ReportableError,
-};
+use crate::{compiler::err::InnerCompilerError, util::reportable_error::ReportableError};
 
 pub enum IrError {
     UndefinedMain,
     UndeclaredIdentifier(String),
 
-    UnknownType(Type),
     MismatchedType,
     InvalidLValue,
 
@@ -24,9 +20,6 @@ impl ReportableError for IrError {
             }
             IrError::UndeclaredIdentifier(identifier) => {
                 panic!("undeclared identifier {identifier} used.");
-            }
-            IrError::UnknownType(unknown_type) => {
-                panic!("unknown type {unknown_type}.");
             }
             IrError::MismatchedType => {
                 panic!("mismatched type.");

@@ -4,11 +4,13 @@ pub struct Reader {
 }
 
 impl Reader {
+    #[must_use]
     pub fn new(code: &str) -> Reader {
         let code: Vec<_> = code.chars().collect();
         Reader { code, position: 0 }
     }
 
+    #[must_use]
     pub fn peek(&self) -> Option<char> {
         if self.position >= self.code.len() {
             return None;

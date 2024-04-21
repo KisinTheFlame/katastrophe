@@ -1,10 +1,17 @@
-use crate::compiler::{
-    err::CompileError,
-    scope::Tag,
-    syntax::ast::{
-        BinaryOperator, DefineDetail, Expression, FunctionPrototype, IfDetail, LetDetail,
-        Mutability, Parameter, Program, Statement, Type, UnaryOperator, Variable,
+use crate::{
+    compiler::{
+        err::CompileError,
+        scope::Tag,
+        syntax::ast::{
+            crumb::{FunctionPrototype, Mutability, Parameter, Variable},
+            expression::Expression,
+            operator::{Binary, Unary},
+            statement::{DefineDetail, IfDetail, LetDetail, Statement},
+            ty::Type,
+            Program,
+        },
     },
+    system_error,
 };
 
 use super::err::IrError;
@@ -15,7 +22,8 @@ use super::{
         next_variable_id,
     },
     instruction::{
-        Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrScope, IrType, Value,
+        ir_type::IrType, Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrScope,
+        Value,
     },
 };
 
@@ -118,29 +126,25 @@ impl Translator {
 
     fn translate_binary_expression(
         &mut self,
-        operator: &BinaryOperator,
+        operator: &Binary,
         sub_type: &Type,
         left: Expression,
         right: Expression,
     ) -> Result<(Instruction, Value), CompileError> {
         let operator = match operator {
-            BinaryOperator::Add => IrBinaryOpcode::Add,
-            BinaryOperator::Subtract => IrBinaryOpcode::Subtract,
-            BinaryOperator::Multiply => IrBinaryOpcode::Multiply,
-            BinaryOperator::Divide => IrBinaryOpcode::DivideSigned,
-            BinaryOperator::LogicalAnd | BinaryOperator::BitAnd => IrBinaryOpcode::And,
-            BinaryOperator::LogicalOr | BinaryOperator::BitOr => IrBinaryOpcode::Or,
-            BinaryOperator::Equal => IrBinaryOpcode::Compare(Comparator::Equal),
-            BinaryOperator::NotEqual => IrBinaryOpcode::Compare(Comparator::NotEqual),
-            BinaryOperator::LessThan => IrBinaryOpcode::Compare(Comparator::SignedLessThan),
-            BinaryOperator::LessThanEqual => {
-                IrBinaryOpcode::Compare(Comparator::SignedLessThanEqual)
-            }
-            BinaryOperator::GreaterThan => IrBinaryOpcode::Compare(Comparator::SignedGreaterThan),
-            BinaryOperator::GreaterThanEqual => {
-                IrBinaryOpcode::Compare(Comparator::SignedGreaterThanEqual)
-            }
-            BinaryOperator::Assign => return self.translate_assignment(sub_type, &left, right),
+            Binary::Add => IrBinaryOpcode::Add,
+            Binary::Subtract => IrBinaryOpcode::Subtract,
+            Binary::Multiply => IrBinaryOpcode::Multiply,
+            Binary::Divide => IrBinaryOpcode::DivideSigned,
+            Binary::LogicalAnd | Binary::BitAnd => IrBinaryOpcode::And,
+            Binary::LogicalOr | Binary::BitOr => IrBinaryOpcode::Or,
+            Binary::Equal => IrBinaryOpcode::Compare(Comparator::Equal),
+            Binary::NotEqual => IrBinaryOpcode::Compare(Comparator::NotEqual),
+            Binary::LessThan => IrBinaryOpcode::Compare(Comparator::SignedLessThan),
+            Binary::LessThanEqual => IrBinaryOpcode::Compare(Comparator::SignedLessThanEqual),
+            Binary::GreaterThan => IrBinaryOpcode::Compare(Comparator::SignedGreaterThan),
+            Binary::GreaterThanEqual => IrBinaryOpcode::Compare(Comparator::SignedGreaterThanEqual),
+            Binary::Assign => return self.translate_assignment(sub_type, &left, right),
         };
 
         let (left_instruction, left) = self.translate_expression(left)?;
@@ -202,7 +206,7 @@ impl Translator {
 
     fn translate_unary_expression(
         &mut self,
-        operator: UnaryOperator,
+        operator: Unary,
         sub_type: &Type,
         expression: Expression,
     ) -> Result<(Instruction, Value), CompileError> {
@@ -211,11 +215,11 @@ impl Translator {
         let result = self.declare_anonymous();
         let data_type = IrType::from(sub_type);
         let unary_instruction = match operator {
-            UnaryOperator::LogicalNot | UnaryOperator::BitNot => {
+            Unary::LogicalNot | Unary::BitNot => {
                 let mask = match data_type {
                     IrType::Bool => 1,
                     IrType::I32 => -1i32,
-                    _ => return Err(IrError::MismatchedType.into()),
+                    _ => return Err(system_error!("type check messed.")),
                 };
                 Instruction::Binary {
                     operator: IrBinaryOpcode::Xor,
@@ -225,7 +229,7 @@ impl Translator {
                     right: expression_value,
                 }
             }
-            UnaryOperator::Negative => Instruction::Binary {
+            Unary::Negative => Instruction::Binary {
                 operator: IrBinaryOpcode::Subtract,
                 data_type,
                 result: result.clone(),
@@ -447,15 +451,15 @@ impl Translator {
         };
         let (expression_instructions, expression) = self.translate_expression(return_value)?;
         let function_name = self.scope.current_function()?;
-        let Some((_, function_type)) = self.scope.lookup(&function_name)? else {
-            return Err(IrError::UndeclaredIdentifier(function_name).into());
-        };
-        let IrType::Function {
-            return_type,
-            parameter_types: _,
-        } = function_type
+        let Some((
+            _,
+            IrType::Function {
+                return_type,
+                parameter_types: _,
+            },
+        )) = self.scope.lookup(&function_name)?
         else {
-            return Err(IrError::MismatchedType.into());
+            return Err(system_error!("must be a function type"));
         };
         let return_type = *return_type;
         let instructions = vec![
@@ -486,7 +490,7 @@ impl Translator {
             parameter_types,
         } = function_type
         else {
-            return Err(IrError::MismatchedType.into());
+            return Err(system_error!(""));
         };
         let parameter_types = parameter_types.into_iter().map(IrType::from).collect();
         let return_type = *return_type;
