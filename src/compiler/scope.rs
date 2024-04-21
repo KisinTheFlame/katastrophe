@@ -84,23 +84,40 @@ impl<T: Clone> Scope<T> {
     }
 
     pub fn declare(&mut self, symbol: String, symbol_info: T) -> Result<(), CompileError> {
-        self.current_layer
-            .as_mut()
-            .map_or(Err(ScopeError::NullScope.into()), |layer| {
-                layer.declare(symbol, symbol_info)
-            })
+        self.execute_mut(|layer| layer.declare(symbol, symbol_info))
     }
 
-    pub fn lookup_symbol(&self, symbol: &String) -> Result<Option<T>, CompileError> {
+    pub fn overwrite(&mut self, symbol: String, symbol_info: T) -> Result<(), CompileError> {
+        self.execute_mut(|layer| {
+            layer.overwrite(symbol, symbol_info);
+            Ok(())
+        })
+    }
+
+    pub fn lookup(&self, symbol: &String) -> Result<Option<T>, CompileError> {
+        self.execute(|layer| Ok(layer.lookup(symbol)))
+    }
+
+    fn execute<S>(
+        &self,
+        f: impl FnOnce(&Box<Layer<T>>) -> Result<S, CompileError>,
+    ) -> Result<S, CompileError> {
         self.current_layer
             .as_ref()
-            .map_or(Err(ScopeError::NullScope.into()), |layer| {
-                Ok(layer.lookup(symbol))
-            })
+            .map_or(Err(ScopeError::NullScope.into()), f)
     }
 
-    pub fn exist_symbol(&self, symbol: &String) -> Result<bool, CompileError> {
-        Ok(self.lookup_symbol(symbol)?.is_some())
+    fn execute_mut<S>(
+        &mut self,
+        f: impl FnOnce(&mut Box<Layer<T>>) -> Result<S, CompileError>,
+    ) -> Result<S, CompileError> {
+        self.current_layer
+            .as_mut()
+            .map_or(Err(ScopeError::NullScope.into()), f)
+    }
+
+    pub fn exist(&self, symbol: &String) -> Result<bool, CompileError> {
+        Ok(self.lookup(symbol)?.is_some())
     }
 
     pub fn is_global(&self) -> Result<bool, CompileError> {
@@ -111,7 +128,7 @@ impl<T: Clone> Scope<T> {
             })
     }
 
-    pub fn get_current_function_name(&self) -> Result<String, CompileError> {
+    pub fn current_function(&self) -> Result<String, CompileError> {
         self.current_layer
             .as_ref()
             .map_or(Err(ScopeError::NullScope.into()), |layer| {
@@ -123,6 +140,16 @@ impl<T: Clone> Scope<T> {
 impl<T: Clone> Default for Scope<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T: Clone> Display for Scope<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(layer) = &self.current_layer {
+            write!(f, "{layer}")
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -151,6 +178,10 @@ impl<T: Clone> Layer<T> {
         Ok(())
     }
 
+    pub fn overwrite(&mut self, symbol: String, symbol_info: T) {
+        self.symbol_table.insert(symbol, symbol_info);
+    }
+
     pub fn lookup(&self, symbol: &String) -> Option<T> {
         let result = self.symbol_table.get(symbol);
         if result.is_some() {
@@ -171,5 +202,16 @@ impl<T: Clone> Layer<T> {
             .map_or(Err(ScopeError::NotInFunction.into()), |outer| {
                 outer.get_current_function_name()
             })
+    }
+}
+
+impl<T: Clone> Display for Layer<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tag = &self.tag;
+        write!(f, "{tag}")?;
+        if let Some(outer) = &self.outer {
+            write!(f, ", {outer}")?;
+        }
+        writeln!(f)
     }
 }

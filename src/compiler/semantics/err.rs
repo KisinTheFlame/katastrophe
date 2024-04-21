@@ -5,13 +5,23 @@ use crate::{
 
 pub enum SemanticError {
     UndeclaredIdentifier(String),
+    IllegalLValue,
+    AssigningImmutableVariable(String),
 }
 
 impl InnerCompilerError for SemanticError {}
 
 impl ReportableError for SemanticError {
     fn report(&self) -> ! {
-        panic!()
+        match self {
+            SemanticError::UndeclaredIdentifier(identifier) => {
+                panic!("undeclared identifier: {identifier}.")
+            }
+            SemanticError::IllegalLValue => panic!("illegal lvalue."),
+            SemanticError::AssigningImmutableVariable(identifier) => {
+                panic!("assigning immutable variable: {identifier}.")
+            }
+        }
     }
 }
 
@@ -26,8 +36,8 @@ pub enum TypeError {
         returned: Type,
     },
     IfConditionNeedBool,
-    LetAssignTypeMismatch {
-        declared_type: Type,
+    AssignTypeMismatch {
+        lvalue_type: Type,
         expression_type: Type,
     },
     CallArgumentTypesMismatch {
@@ -57,8 +67,8 @@ impl ReportableError for TypeError {
             TypeError::IfConditionNeedBool => {
                 panic!("condition of if is supposed to be bool type.")
             }
-            TypeError::LetAssignTypeMismatch {
-                declared_type,
+            TypeError::AssignTypeMismatch {
+                lvalue_type: declared_type,
                 expression_type,
             } => {
                 panic!("assignment type mismatch. declared: {declared_type}, expression type: {expression_type}.")

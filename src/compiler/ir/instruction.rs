@@ -20,16 +20,22 @@ pub enum IrType {
 
 impl From<Type> for IrType {
     fn from(value: Type) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&Type> for IrType {
+    fn from(value: &Type) -> Self {
         match value {
-            Type::Void => IrType::Void,
+            Type::Never => IrType::Void,
             Type::I32 => IrType::I32,
             Type::Bool => IrType::Bool,
             Type::Function {
                 return_type,
                 parameter_types,
             } => IrType::Function {
-                return_type: Box::new(IrType::from(*return_type)),
-                parameter_types: parameter_types.into_iter().map(IrType::from).collect(),
+                return_type: Box::new(IrType::from(return_type.as_ref())),
+                parameter_types: parameter_types.iter().map(IrType::from).collect(),
             },
             Type::Unknown => unimplemented!(),
         }
@@ -53,6 +59,7 @@ impl Display for IrType {
 
 #[derive(Clone)]
 pub enum Value {
+    Void,
     Register(String),
     ImmediateI32(i32),
     ImmediateBool(bool),
@@ -66,6 +73,9 @@ pub enum Value {
 impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Value::Void => {
+                panic!("void")
+            }
             Value::Register(id) | Value::StackPointer(id) | Value::Parameter(id) => {
                 write!(f, "%{id}")
             }
@@ -143,6 +153,11 @@ pub enum Instruction {
         data_type: IrType,
         value: Value,
     },
+    Constant {
+        lvalue: Value,
+        data_type: IrType,
+        value: Value,
+    },
     ReturnVoid,
     Return {
         return_type: IrType,
@@ -156,6 +171,15 @@ pub enum Instruction {
         result: Value,
         left: Value,
         right: Value,
+    },
+    Copy {
+        data_type: IrType,
+        from: Value,
+        to: Value,
+    },
+    Bitcast {
+        from: (Value, IrType),
+        to: (Value, IrType),
     },
     Allocate(Value, IrType),
     Load {
@@ -247,9 +271,30 @@ impl Instruction {
             "{indentation}{receiver}call {return_type} {id}({arguments})"
         )
     }
+
+    fn format_copy(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
+        let Instruction::Copy {
+            data_type,
+            from,
+            to,
+        } = &self
+        else {
+            return Err(fmt::Error);
+        };
+        let from_value = from.clone();
+        let from_type = data_type.clone();
+        let to_value = to.clone();
+        let to_type = data_type.clone();
+        Instruction::Bitcast {
+            from: (from_value, from_type),
+            to: (to_value, to_type),
+        }
+        .pretty_format(f, indentation_num)
+    }
 }
 
 impl PrettyFormat for Instruction {
+    #[allow(clippy::too_many_lines)]
     fn pretty_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
         let indentation = indent(indentation_num);
         match self {
@@ -260,6 +305,13 @@ impl PrettyFormat for Instruction {
                 value,
             } => {
                 writeln!(f, "{indentation}{lvalue} = global {data_type} {value}")
+            }
+            Instruction::Constant {
+                lvalue,
+                data_type,
+                value,
+            } => {
+                writeln!(f, "{indentation}{lvalue} = constant {data_type} {value}")
             }
             Instruction::ReturnVoid => {
                 writeln!(f, "{indentation}ret void")
@@ -287,6 +339,20 @@ impl PrettyFormat for Instruction {
                 writeln!(
                     f,
                     "{indentation}{result} = {operator} {data_type} {left}, {right}"
+                )
+            }
+            Instruction::Copy {
+                data_type: _,
+                from: _,
+                to: _,
+            } => self.format_copy(f, indentation_num),
+            Instruction::Bitcast {
+                from: (from_value, from_type),
+                to: (to_value, to_type),
+            } => {
+                writeln!(
+                    f,
+                    "{indentation}{to_value} = bitcast {from_type} {from_value} to {to_type}"
                 )
             }
             Instruction::Allocate(pointer, data_type) => {

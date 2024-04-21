@@ -49,10 +49,42 @@ impl TypeInferrer {
             .ok_or(TypeError::UndefinedOperation.into())
     }
 
+    fn infer_lvalue(&self, lvalue: &Expression) -> Result<Type, CompileError> {
+        match lvalue {
+            Expression::Identifier(identifier) => {
+                if let Some(var_type) = self.scope.lookup(identifier)? {
+                    Ok(var_type)
+                } else {
+                    Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into())
+                }
+            }
+            _ => Err(SemanticError::IllegalLValue.into()),
+        }
+    }
+
+    fn infer_assignment(
+        &self,
+        sub_type: &mut Type,
+        lvalue: &Expression,
+        expression: &mut Expression,
+    ) -> Result<Type, CompileError> {
+        let lvalue_type = self.infer_lvalue(lvalue)?;
+        let expression_type = self.infer_expression(expression)?;
+        if lvalue_type != expression_type {
+            return Err(TypeError::AssignTypeMismatch {
+                lvalue_type,
+                expression_type,
+            }
+            .into());
+        }
+        *sub_type = lvalue_type;
+        Ok(Type::Never)
+    }
+
     fn infer_expression(&self, expression: &mut Expression) -> Result<Type, CompileError> {
         let result_type = match expression {
             Expression::Identifier(identifier) => {
-                let id_type = self.scope.lookup_symbol(identifier)?;
+                let id_type = self.scope.lookup(identifier)?;
                 let Some(id_type) = id_type else {
                     return Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into());
                 };
@@ -66,17 +98,21 @@ impl TypeInferrer {
                 self.infer_unary_operation_type(&(*operator, sub_type.clone()))?
             }
             Expression::Binary(operator, sub_type, left, right) => {
-                let left_type = self.infer_expression(left)?;
-                let right_type = self.infer_expression(right)?;
-                *sub_type = left_type.clone();
-                self.infer_binary_operation_type(&(operator.clone(), left_type, right_type))?
+                if *operator == BinaryOperator::Assign {
+                    self.infer_assignment(sub_type, left, right)?
+                } else {
+                    let left_type = self.infer_expression(left)?;
+                    let right_type = self.infer_expression(right)?;
+                    *sub_type = left_type.clone();
+                    self.infer_binary_operation_type(&(operator.clone(), left_type, right_type))?
+                }
             }
             Expression::Call(function_id, arguments) => {
                 let argument_types = arguments
                     .iter_mut()
                     .map(|x| self.infer_expression(x))
                     .collect::<Result<Vec<Type>, CompileError>>()?;
-                let Some(function_type) = self.scope.lookup_symbol(function_id)? else {
+                let Some(function_type) = self.scope.lookup(function_id)? else {
                     return Err(SemanticError::UndeclaredIdentifier(function_id.clone()).into());
                 };
                 let Type::Function {
@@ -107,9 +143,9 @@ impl TypeInferrer {
     ) -> Result<(), CompileError> {
         let return_type = return_value
             .as_mut()
-            .map_or(Ok(Type::Void), |v| self.infer_expression(v))?;
-        let function_name = self.scope.get_current_function_name()?;
-        let function_type = self.scope.lookup_symbol(&function_name)?.unwrap();
+            .map_or(Ok(Type::Never), |v| self.infer_expression(v))?;
+        let function_name = self.scope.current_function()?;
+        let function_type = self.scope.lookup(&function_name)?.unwrap();
         let Type::Function {
             return_type: expected_type,
             parameter_types: _,
@@ -152,28 +188,37 @@ impl TypeInferrer {
                 if self.infer_expression(condition)? != Type::Bool {
                     return Err(TypeError::IfConditionNeedBool.into());
                 }
+                self.scope.enter(Tag::Anonymous);
                 self.infer_statement(true_body)?;
+                self.scope.leave(Tag::Anonymous)?;
+
                 if let Some(false_body) = false_body {
+                    self.scope.enter(Tag::Anonymous);
                     self.infer_statement(false_body)?;
+                    self.scope.leave(Tag::Anonymous)?;
                 }
                 Ok(())
             }
-            Statement::Let(LetDetail(Variable(identifier, var_type), expression)) => {
+            Statement::Let(LetDetail(Variable(identifier, lvalue_type, _), expression)) => {
                 let expression_type = self.infer_expression(expression)?;
 
-                if *var_type == Type::Unknown {
-                    *var_type = expression_type;
-                    self.scope.declare(identifier.clone(), var_type.clone())?;
-                    return Ok(());
+                if *lvalue_type == Type::Unknown {
+                    *lvalue_type = expression_type.clone();
                 }
 
-                let var_type = var_type.clone();
-                if var_type == expression_type {
-                    self.scope.declare(identifier.clone(), var_type)?;
+                let lvalue_type = lvalue_type.clone();
+                if lvalue_type == expression_type {
+                    if self.scope.is_global()? {
+                        self.scope
+                            .declare(identifier.clone(), lvalue_type.clone())?;
+                    } else {
+                        self.scope
+                            .overwrite(identifier.clone(), lvalue_type.clone())?;
+                    }
                     Ok(())
                 } else {
-                    Err(TypeError::LetAssignTypeMismatch {
-                        declared_type: var_type,
+                    Err(TypeError::AssignTypeMismatch {
+                        lvalue_type,
                         expression_type,
                     }
                     .into())
@@ -214,18 +259,14 @@ impl TypeInferrer {
 
     fn pre_scan_function_prototype(
         &mut self,
-        prototype: &FunctionPrototype,
+        FunctionPrototype {
+            identifier,
+            parameters: _,
+            function_type,
+        }: &FunctionPrototype,
     ) -> Result<(), CompileError> {
-        self.scope.declare(
-            prototype.identifier.clone(),
-            prototype.function_type.clone(),
-        )?;
-        Ok(())
-    }
-
-    fn pre_scan_global_variable(&mut self, let_detail: &LetDetail) -> Result<(), CompileError> {
-        let LetDetail(Variable(identifier, var_type), _) = let_detail;
-        self.scope.declare(identifier.clone(), var_type.clone())?;
+        self.scope
+            .declare(identifier.clone(), function_type.clone())?;
         Ok(())
     }
 
@@ -239,7 +280,7 @@ impl TypeInferrer {
                 | Statement::Return(_)
                 | Statement::Expression(_)
                 | Statement::If(_) => Err(TypeError::ProcessInGlobal.into()),
-                Statement::Let(let_detail) => self.pre_scan_global_variable(let_detail),
+                Statement::Let(_) => Ok(()),
                 Statement::Define(define_detail) => {
                     self.pre_scan_function_prototype(&define_detail.prototype)
                 }
