@@ -144,7 +144,7 @@ impl Translator {
 
     fn translate_unary_expression(
         &mut self,
-        operator: &UnaryOperator,
+        operator: UnaryOperator,
         sub_type: &Type,
         expression: Expression,
     ) -> Result<(Instruction, Value), CompileError> {
@@ -211,7 +211,7 @@ impl Translator {
                 Ok((Instruction::NoOperation, Value::ImmediateBool(literal)))
             }
             Expression::Unary(operator, sub_type, expression) => {
-                self.translate_unary_expression(&operator, &sub_type, *expression)
+                self.translate_unary_expression(operator, &sub_type, *expression)
             }
             Expression::Binary(operator, expression_type, left, right) => {
                 self.translate_binary_expression(&operator, &expression_type, *left, *right)

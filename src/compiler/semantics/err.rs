@@ -18,7 +18,7 @@ impl ReportableError for SemanticError {
 pub enum TypeError {
     ShouldBeFunctionType,
 
-    NoSuchOperator,
+    UndefinedOperation,
     ProcessInGlobal,
 
     ReturnTypeMismatch {
@@ -45,8 +45,8 @@ impl ReportableError for TypeError {
             TypeError::ShouldBeFunctionType => {
                 panic!("should be a function type.")
             }
-            TypeError::NoSuchOperator => {
-                panic!("no such operator.")
+            TypeError::UndefinedOperation => {
+                panic!("undefined operation.")
             }
             TypeError::ProcessInGlobal => {
                 panic!("process statements found in global.")
