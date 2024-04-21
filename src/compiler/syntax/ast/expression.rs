@@ -51,9 +51,9 @@ impl PrettyFormat for Expression {
             }
             Expression::Call(callee, arguments) => {
                 writeln!(f, "{indentation}Call {callee}")?;
-                for arg in arguments {
-                    arg.pretty_format(f, indentation_num + 1)?;
-                }
+                arguments
+                    .iter()
+                    .try_for_each(|arg| arg.pretty_format(f, indentation_num))?;
             }
         }
         Ok(())

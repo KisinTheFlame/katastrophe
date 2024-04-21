@@ -35,9 +35,9 @@ impl PrettyFormat for Statement {
         match self {
             Statement::Empty => {}
             Statement::Block(statements) => {
-                for statement in statements {
-                    statement.pretty_format(f, indentation_num)?;
-                }
+                statements
+                    .iter()
+                    .try_for_each(|statement| statement.pretty_format(f, indentation_num))?;
             }
             Statement::Return(expression) => {
                 writeln!(f, "{indentation}Return")?;

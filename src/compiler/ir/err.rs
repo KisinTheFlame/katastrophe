@@ -2,11 +2,6 @@ use crate::{compiler::err::InnerCompilerError, util::reportable_error::Reportabl
 
 pub enum IrError {
     UndefinedMain,
-    UndeclaredIdentifier(String),
-
-    MismatchedType,
-    InvalidLValue,
-
     BuiltinFileNotExist,
 }
 
@@ -17,15 +12,6 @@ impl ReportableError for IrError {
         match &self {
             IrError::UndefinedMain => {
                 panic!("main function not found in global scope.");
-            }
-            IrError::UndeclaredIdentifier(identifier) => {
-                panic!("undeclared identifier {identifier} used.");
-            }
-            IrError::MismatchedType => {
-                panic!("mismatched type.");
-            }
-            IrError::InvalidLValue => {
-                panic!("invalid lvalue.");
             }
             IrError::BuiltinFileNotExist => {
                 panic!("builtin file not exist.");
