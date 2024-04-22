@@ -5,7 +5,7 @@ use crate::compiler::{
         crumb::{FunctionPrototype, Mutability, Parameter, Variable},
         expression::Expression,
         operator::Binary,
-        statement::{DefineDetail, LetDetail, Statement},
+        statement::{DefineDetail, LetDetail, Statement, WhileDetail},
         Program,
     },
 };
@@ -63,17 +63,21 @@ impl MutabilityChecker {
             }
             Statement::If(if_detail) => {
                 self.scope.enter(Tag::Anonymous);
-                let true_result = self.check_statement(&if_detail.true_body);
+                self.check_statement(&if_detail.true_body)?;
                 self.scope.leave(Tag::Anonymous)?;
 
-                let false_result = if_detail.false_body.as_ref().map_or(Ok(()), |body| {
+                if_detail.false_body.as_ref().map_or(Ok(()), |body| {
                     self.scope.enter(Tag::Anonymous);
                     self.check_statement(body)?;
                     self.scope.leave(Tag::Anonymous)?;
                     Ok(())
-                });
-
-                true_result.and(false_result)
+                })
+            }
+            Statement::While(WhileDetail(_, body)) => {
+                self.scope.enter(Tag::Named("while"));
+                self.check_statement(body)?;
+                self.scope.leave(Tag::Named("while"))?;
+                Ok(())
             }
             Statement::Let(LetDetail(Variable(identifier, _, mutability), _)) => {
                 if self.scope.is_global()? {

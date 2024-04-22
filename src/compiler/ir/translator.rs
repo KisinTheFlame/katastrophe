@@ -6,7 +6,7 @@ use crate::{
             crumb::{FunctionPrototype, Mutability, Parameter, Variable},
             expression::Expression,
             operator::{Binary, Unary},
-            statement::{DefineDetail, IfDetail, LetDetail, Statement},
+            statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
             ty::Type,
             Program,
         },
@@ -106,9 +106,9 @@ impl Translator {
         Ok(value)
     }
 
-    fn declare_label(&self) -> Value {
+    fn declare_label(&self, tag: &str) -> Value {
         let id = next_label_id();
-        Value::Label(format!("l{id}"))
+        Value::Label(format!("l{id}.{tag}"))
     }
 
     fn translate_block_statement(
@@ -327,27 +327,28 @@ impl Translator {
     /// source code example:
     /// ```
     /// if condition {
-    ///     do_something_a();
+    ///     do_something_a
     /// } else {
-    ///     do_something_b();
+    ///     do_something_b
     /// }
     /// ```
     ///
     ///
     /// translation:
     /// ```
-    ///     br label %start_label
-    /// start_label:
+    ///     br label %if_start_label
+    /// if_start_label:
     ///     condition_instructions
     ///     br i1 condition_id, label %when_true_label, label %when_false_label
     /// when_true_label:
-    ///     do_something_a();
-    ///     br label %end_label
+    ///     do_something_a_instructions
+    ///     br label %if_end_label
     /// when_false_label:
-    ///     do_something_b();
-    ///     br label %end_label
-    /// end_label:
+    ///     do_something_b_instructions
+    ///     br label %if_end_label
+    /// if_end_label:
     /// ```
+    ///
     fn translate_if_statement(
         &mut self,
         if_detail: &IfDetail,
@@ -357,13 +358,13 @@ impl Translator {
             true_body,
             false_body,
         } = if_detail;
-        let start = self.declare_label();
-        let when_true = self.declare_label();
-        let when_false = self.declare_label();
-        let end = self.declare_label();
+        let if_start = self.declare_label("if_start");
+        let when_true = self.declare_label("when_true");
+        let when_false = self.declare_label("when_false");
+        let if_end = self.declare_label("if_end");
 
-        let jump_to_start = Instruction::Jump(start.clone());
-        let start_label = Instruction::Label(start);
+        let jump_to_start = Instruction::Jump(if_start.clone());
+        let start_label = Instruction::Label(if_start);
         let (condition_instructions, condition) = self.translate_expression(condition)?;
         let conditional_jump = Instruction::JumpIf {
             condition,
@@ -372,14 +373,14 @@ impl Translator {
         };
         let when_true_label = Instruction::Label(when_true);
         let body_instructions = self.translate_statement(true_body)?;
-        let jump_true_to_end = Instruction::Jump(end.clone());
+        let jump_true_to_end = Instruction::Jump(if_end.clone());
         let when_false_label = Instruction::Label(when_false);
         let false_body_instructions = match false_body {
             Some(statement) => self.translate_statement(statement)?,
             None => Instruction::NoOperation,
         };
-        let jump_false_to_end = Instruction::Jump(end.clone());
-        let end_label = Instruction::Label(end);
+        let jump_false_to_end = Instruction::Jump(if_end.clone());
+        let end_label = Instruction::Label(if_end);
 
         Ok(Instruction::Batch(vec![
             jump_to_start,
@@ -393,6 +394,59 @@ impl Translator {
             false_body_instructions,
             jump_false_to_end,
             end_label,
+        ]))
+    }
+
+    /// source code example:
+    /// ```
+    /// while condition {
+    ///     do_something
+    /// }
+    /// ```
+    ///
+    ///
+    /// translation:
+    /// ```
+    ///     br label %check_point_label
+    /// check_point_label:
+    ///     condition_instructions
+    ///     br i1 condition_id, label %loop_label, label %loop_end_label
+    /// loop_start_label:
+    ///     do_something_instructions
+    ///     br label %check_point_label
+    /// loop_end_label:
+    /// ```
+    ///
+    fn translate_while_statement(
+        &mut self,
+        WhileDetail(condition, body): &WhileDetail,
+    ) -> Result<Instruction, CompileError> {
+        let check_point = self.declare_label("check_point");
+        let loop_start = self.declare_label("loop_start");
+        let loop_end = self.declare_label("loop_end");
+
+        let jump_to_check_point = Instruction::Jump(check_point.clone());
+        let check_point_label = Instruction::Label(check_point.clone());
+        let (condition_instructions, condition) = self.translate_expression(condition)?;
+        let conditional_jump = Instruction::JumpIf {
+            condition,
+            when_true: loop_start.clone(),
+            when_false: loop_end.clone(),
+        };
+        let loop_start_label = Instruction::Label(loop_start);
+        let body_instructions = self.translate_statement(body)?;
+        let jump_back_to_check_point = Instruction::Jump(check_point);
+        let loop_end_label = Instruction::Label(loop_end);
+
+        Ok(Instruction::Batch(vec![
+            jump_to_check_point,
+            check_point_label,
+            condition_instructions,
+            conditional_jump,
+            loop_start_label,
+            body_instructions,
+            jump_back_to_check_point,
+            loop_end_label,
         ]))
     }
 
@@ -536,6 +590,7 @@ impl Translator {
             }
             Statement::Expression(expression) => self.translate_expression_statement(expression),
             Statement::If(if_detail) => self.translate_if_statement(if_detail),
+            Statement::While(while_detail) => self.translate_while_statement(while_detail),
             Statement::Let(let_detail) => self.translate_let_statement(let_detail),
             Statement::Define(define_detail) => self.translate_define_statement(define_detail),
         }
