@@ -28,7 +28,7 @@ impl ReportableError for CompileError {
         let CompileError(reason) = self;
         match reason {
             Either::Left(reason) => reason.report(),
-            Either::Right(reason) => panic!("{reason}"),
+            Either::Right(reason) => panic!("internal error: {reason}"),
         }
     }
 }

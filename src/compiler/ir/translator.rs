@@ -14,7 +14,6 @@ use crate::{
     system_error,
 };
 
-use super::err::IrError;
 use super::{
     builtin::{deinit_builtin_scope, init_builtin_scope},
     id::{
@@ -22,10 +21,10 @@ use super::{
         next_variable_id,
     },
     instruction::{
-        ir_type::IrType, Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, IrScope,
-        Value,
+        ir_type::IrType, Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, Value,
     },
 };
+use super::{err::IrError, instruction::IrScope};
 
 pub struct Translator {
     scope: IrScope,
@@ -452,14 +451,15 @@ impl Translator {
 
     fn translate_let_statement(
         &mut self,
-        let_detail: &LetDetail,
+        LetDetail(Variable(identifier, var_type, mutability), expression): &LetDetail,
     ) -> Result<Instruction, CompileError> {
-        let LetDetail(Variable(identifier, var_type, mutability), expression) = let_detail;
         let data_type = IrType::from(var_type);
         let (expression_instructions, expression) = self.translate_expression(expression)?;
         let assign_instruction = match (self.scope.is_global()?, mutability) {
             (true, Mutability::Mutable) => {
-                let lvalue = self.declare_global(identifier.clone(), data_type.clone())?;
+                let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
+                    return Err(system_error!("must find it."));
+                };
                 Instruction::Global {
                     lvalue,
                     data_type,
@@ -467,7 +467,9 @@ impl Translator {
                 }
             }
             (true, Mutability::Immutable) => {
-                let lvalue = self.declare_constant(identifier.clone(), data_type.clone())?;
+                let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
+                    return Err(system_error!("must find it."));
+                };
                 Instruction::Constant {
                     lvalue,
                     data_type,
@@ -535,25 +537,21 @@ impl Translator {
                 FunctionPrototype {
                     identifier,
                     parameters,
-                    function_type,
+                    function_type: _,
                 },
             body,
         }: &DefineDetail,
     ) -> Result<Instruction, CompileError> {
-        let Type::Function {
-            return_type,
-            parameter_types,
+        let Some((function, function_type)) = self.scope.lookup(identifier)? else {
+            return Err(system_error!("must pre scanned it."));
+        };
+        let IrType::Function {
+            ref return_type,
+            parameter_types: _,
         } = function_type
         else {
-            return Err(system_error!(""));
+            return Err(system_error!("must be a function type."));
         };
-        let return_type = IrType::from(return_type.as_ref());
-        let parameter_types = parameter_types.iter().map(IrType::from).collect();
-        let function_type = IrType::Function {
-            return_type: Box::new(return_type.clone()),
-            parameter_types,
-        };
-        let function = self.declare_function(identifier.clone(), function_type.clone())?;
 
         self.scope.enter(Tag::Function(identifier.clone()));
         let parameters = parameters
@@ -562,7 +560,7 @@ impl Translator {
             .collect::<Result<Vec<_>, _>>()?;
         let body = Instruction::Batch(vec![
             self.translate_statement(body)?,
-            if return_type == IrType::Void {
+            if let IrType::Void = return_type.as_ref() {
                 Instruction::ReturnVoid
             } else {
                 Instruction::Unreachable
@@ -620,11 +618,52 @@ define i32 @main() {{
         Ok(template)
     }
 
+    fn pre_scan_global(&mut self, program: &Program) -> Result<(), CompileError> {
+        program
+            .statements
+            .iter()
+            .try_for_each(|statement| match statement {
+                Statement::Empty
+                | Statement::Block(_)
+                | Statement::Return(_)
+                | Statement::Expression(_)
+                | Statement::If(_)
+                | Statement::While(_) => Err(system_error!("unchecked global procedures")),
+                Statement::Let(LetDetail(Variable(identifier, var_type, mutability), _)) => {
+                    let data_type = IrType::from(var_type);
+                    match mutability {
+                        Mutability::Mutable => {
+                            self.declare_global(identifier.clone(), data_type)?
+                        }
+                        Mutability::Immutable => {
+                            self.declare_constant(identifier.clone(), data_type)?
+                        }
+                    };
+                    Ok(())
+                }
+                Statement::Define(DefineDetail {
+                    prototype:
+                        FunctionPrototype {
+                            identifier,
+                            parameters: _,
+                            function_type,
+                        },
+                    body: _,
+                }) => {
+                    let function_type = IrType::from(function_type);
+                    self.declare_function(identifier.clone(), function_type.clone())?;
+                    Ok(())
+                }
+            })?;
+        Ok(())
+    }
+
     /// # Errors
     pub fn translate(&mut self, program: &Program) -> Result<String, CompileError> {
         let mut llvm_code = String::new();
         init_builtin_scope(&mut self.scope, &mut llvm_code)?;
         self.scope.enter(Tag::Global);
+        self.pre_scan_global(program)?;
         let user_program = self.translate_program(program)?;
         let user_program = user_program.to_string();
         llvm_code.push_str(&user_program);
