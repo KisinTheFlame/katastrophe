@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Keyword {
     Define,
     Using,
@@ -37,11 +37,11 @@ impl Keyword {
     }
 
     pub fn from(s: &str) -> Option<Keyword> {
-        KEYWORD_MAP.get(s).cloned()
+        KEYWORD_MAP.get(s).copied()
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Symbol {
     Add,
     Subtract,

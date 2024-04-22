@@ -35,7 +35,7 @@ pub enum TypeError {
         expected: Type,
         returned: Type,
     },
-    IfConditionNeedBool,
+    ConditionNeedBool,
     AssignTypeMismatch {
         lvalue_type: Type,
         expression_type: Type,
@@ -64,8 +64,8 @@ impl ReportableError for TypeError {
             TypeError::ReturnTypeMismatch { expected, returned } => {
                 panic!("return type mismatch. expected: {expected}, returned: {returned}.")
             }
-            TypeError::IfConditionNeedBool => {
-                panic!("condition of if is supposed to be bool type.")
+            TypeError::ConditionNeedBool => {
+                panic!("condition is supposed to be bool type.")
             }
             TypeError::AssignTypeMismatch {
                 lvalue_type: declared_type,

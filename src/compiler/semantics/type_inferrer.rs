@@ -7,7 +7,7 @@ use crate::compiler::{
         crumb::{FunctionPrototype, Parameter, Variable},
         expression::Expression,
         operator::{Binary, Unary},
-        statement::{DefineDetail, IfDetail, LetDetail, Statement},
+        statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
         ty::Type,
         Program,
     },
@@ -187,7 +187,7 @@ impl TypeInferrer {
                 false_body,
             }) => {
                 if self.infer_expression(condition)? != Type::Bool {
-                    return Err(TypeError::IfConditionNeedBool.into());
+                    return Err(TypeError::ConditionNeedBool.into());
                 }
                 self.scope.enter(Tag::Anonymous);
                 self.infer_statement(true_body)?;
@@ -198,6 +198,15 @@ impl TypeInferrer {
                     self.infer_statement(false_body)?;
                     self.scope.leave(Tag::Anonymous)?;
                 }
+                Ok(())
+            }
+            Statement::While(WhileDetail(condition, body)) => {
+                if self.infer_expression(condition)? != Type::Bool {
+                    return Err(TypeError::ConditionNeedBool.into());
+                }
+                self.scope.enter(Tag::Named("while"));
+                self.infer_statement(body)?;
+                self.scope.leave(Tag::Named("while"))?;
                 Ok(())
             }
             Statement::Let(LetDetail(Variable(identifier, lvalue_type, _), expression)) => {
@@ -280,7 +289,8 @@ impl TypeInferrer {
                 | Statement::Block(_)
                 | Statement::Return(_)
                 | Statement::Expression(_)
-                | Statement::If(_) => Err(TypeError::ProcessInGlobal.into()),
+                | Statement::If(_)
+                | Statement::While(_) => Err(TypeError::ProcessInGlobal.into()),
                 Statement::Let(_) => Ok(()),
                 Statement::Define(define_detail) => {
                     self.pre_scan_function_prototype(&define_detail.prototype)
