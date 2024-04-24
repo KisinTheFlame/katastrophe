@@ -1,13 +1,20 @@
 use std::env::Args;
 use std::iter::Peekable;
+
 use std::path::Path;
 use std::process::Command;
 use std::{env, fs};
 
+use compiler::context::Context;
+use compiler::err::CompileError;
+use compiler::ir::builtin::{generate_builtin, generate_entry};
+use compiler::ir::translator::Translator;
+use compiler::semantics::main_function_check::main_function_check;
 use compiler::semantics::mutability_checker::MutabilityChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;
+use compiler::syntax::ast::package::DocumentPath;
+use indoc::formatdoc;
 
-use crate::compiler::ir::translator::Translator;
 use crate::compiler::syntax::parser::Parser;
 use crate::util::reportable_error::ReportableError;
 
@@ -138,7 +145,7 @@ impl ArgHandler {
     }
 }
 
-fn main() {
+fn execute() -> Result<(), CompileError> {
     let args = env::args();
     let mut arg_handler = ArgHandler::new(args);
     let options = arg_handler.handle();
@@ -150,51 +157,101 @@ fn main() {
         panic!("encountering fatal error when reading file");
     };
 
-    let mut parser = Parser::new(code.as_str());
-    let mut program = match parser.parse_program() {
-        Ok(program) => program,
-        Err(e) => e.report(),
-    };
+    // parse and semantic check
+    let mut context = Context::new();
+    let mut parser = Parser::new(DocumentPath(vec![String::from("self")]), code.as_str());
+    let main_document_id = parser.parse_document(&mut context)?;
+
+    let mut ids = context.document_map.keys().map(|x| *x).collect::<Vec<_>>();
+    ids.sort();
+
+    let mut type_inferrer = TypeInferrer::new();
+    ids.iter()
+        .try_for_each(|id| type_inferrer.infer(&mut context, *id))?;
+
+    let mut mutability_checker: MutabilityChecker = MutabilityChecker::new();
+    ids.iter()
+        .try_for_each(|id| mutability_checker.check_document(&context, *id))?;
+
+    main_function_check(&context, main_document_id)?;
 
     if let Some(Target::Ast) = options.target {
         if !output_path.contains('.') {
             output_path.push_str(".ast");
         }
-        fs::write(output_path, format!("{program}")).expect("failed to write ast.");
-        return;
+        let output = ids
+            .iter()
+            .map(|id| {
+                let document_path = context.path_map.get(id).unwrap();
+                let ast = context.document_map.get(id).unwrap();
+                formatdoc! {"
+                    ----- {document_path} -----
+                    {ast}
+                "}
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(output_path, output).expect("failed to write ast.");
+        return Ok(());
     }
 
-    let mut type_inferrer = TypeInferrer::new();
-    if let Err(e) = type_inferrer.infer(&mut program) {
-        e.report();
-    }
+    // translate
+    let mut id_translators = ids
+        .iter()
+        .map(|id| {
+            let translator = Translator::new(context.path_map.get(id).unwrap().clone());
+            (*id, translator)
+        })
+        .collect::<Vec<_>>();
+    id_translators
+        .iter_mut()
+        .try_for_each(|(id, translator)| translator.pre_scan_global(&mut context, *id))?;
+    id_translators
+        .iter_mut()
+        .try_for_each(|(id, translator)| translator.translate(&mut context, *id))?;
 
-    let mut mutability_checker: MutabilityChecker = MutabilityChecker::new();
-    if let Err(e) = mutability_checker.check_program(&program) {
-        e.report();
-    }
-
-    let mut translator = Translator::new();
-    let ir = match translator.translate(&program) {
-        Ok(ir) => ir,
-        Err(e) => e.report(),
-    };
+    let ir = ids
+        .iter()
+        .map(|id| {
+            let document_path = context.path_map.get(id).unwrap();
+            let ir = context.instruction.get(id).unwrap();
+            formatdoc! {"
+                ----- {document_path} -----
+                {ir}
+            "}
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let builtin_ir = generate_builtin()?;
+    let (main_value, _) = context
+        .ir_model_map
+        .get(&main_document_id)
+        .unwrap()
+        .get(&String::from("main"))
+        .unwrap();
+    let entry_ir = generate_entry(main_value.clone())?;
+    let ir_code = formatdoc! {"
+        {builtin_ir}
+        {ir}
+        {entry_ir}
+    "};
 
     if let Some(Target::Ir) = options.target {
         if !output_path.contains('.') {
             output_path.push_str(".ll");
         }
-        fs::write(output_path, ir).expect("failed to write ir.");
-        return;
+        fs::write(output_path, ir_code).expect("failed to write ir.");
+        return Ok(());
     }
 
+    // assemble
     let temp_ir_dir = "/tmp/katastrophe";
     if !Path::new(&temp_ir_dir).exists() {
         fs::create_dir(temp_ir_dir).expect("failed to open a temp ir file.");
     }
 
     let temp_ir_path = format!("{temp_ir_dir}/temp.ll");
-    fs::write(&temp_ir_path, ir).expect("failed to open a temp ir file.");
+    fs::write(&temp_ir_path, ir_code).expect("failed to open a temp ir file.");
 
     let link_result = Command::new("clang")
         .arg("-mllvm")
@@ -207,5 +264,13 @@ fn main() {
     if !link_result.status.success() {
         let error = String::from_utf8(link_result.stderr).expect("failed to read stderr.");
         panic!("{error}");
+    }
+
+    Ok(())
+}
+
+fn main() {
+    if let Err(e) = execute() {
+        e.report();
     }
 }

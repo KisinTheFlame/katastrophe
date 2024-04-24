@@ -1,4 +1,4 @@
-use crate::util::reportable_error::ReportableError;
+use crate::{compiler::err::InnerCompilerError, util::reportable_error::ReportableError};
 
 pub enum LexErrorKind {
     IllegalIntegerLiteral(String),
@@ -11,6 +11,8 @@ pub enum LexErrorKind {
 pub struct LexError {
     pub kind: LexErrorKind,
 }
+
+impl InnerCompilerError for LexError {}
 
 impl ReportableError for LexError {
     fn report(&self) -> ! {

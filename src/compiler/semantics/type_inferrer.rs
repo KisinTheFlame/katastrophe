@@ -1,16 +1,21 @@
 use std::collections::HashMap;
 
-use crate::compiler::{
-    err::CompileError,
-    scope::{Scope, Tag},
-    syntax::ast::{
-        crumb::{FunctionPrototype, Parameter, Variable},
-        expression::Expression,
-        operator::{Binary, Unary},
-        statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
-        ty::Type,
-        Program,
+use crate::{
+    compiler::{
+        context::{Context, DocumentId},
+        err::CompileError,
+        scope::{Scope, Tag},
+        syntax::ast::{
+            crumb::{FunctionPrototype, Identifier, Parameter, Variable},
+            expression::Expression,
+            operator::{Binary, Unary},
+            package::{DocumentPath, UsingPath},
+            statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
+            ty::Type,
+            Document,
+        },
     },
+    system_error,
 };
 
 use super::err::{SemanticError, TypeError};
@@ -165,14 +170,19 @@ impl TypeInferrer {
         }
     }
 
-    fn infer_statement(&mut self, statement: &mut Statement) -> Result<(), CompileError> {
+    fn infer_statement(
+        &mut self,
+        id_map: &HashMap<DocumentPath, DocumentId>,
+        type_map: &HashMap<DocumentId, HashMap<Identifier, Type>>,
+        statement: &mut Statement,
+    ) -> Result<(), CompileError> {
         match statement {
             Statement::Empty => Ok(()),
             Statement::Block(statements) => {
                 self.scope.enter(Tag::Anonymous);
                 statements
                     .iter_mut()
-                    .try_for_each(|statement| self.infer_statement(statement))?;
+                    .try_for_each(|statement| self.infer_statement(id_map, type_map, statement))?;
                 self.scope.leave(Tag::Anonymous)?;
                 Ok(())
             }
@@ -190,12 +200,12 @@ impl TypeInferrer {
                     return Err(TypeError::ConditionNeedBool.into());
                 }
                 self.scope.enter(Tag::Anonymous);
-                self.infer_statement(true_body)?;
+                self.infer_statement(id_map, type_map, true_body)?;
                 self.scope.leave(Tag::Anonymous)?;
 
                 if let Some(false_body) = false_body {
                     self.scope.enter(Tag::Anonymous);
-                    self.infer_statement(false_body)?;
+                    self.infer_statement(id_map, type_map, false_body)?;
                     self.scope.leave(Tag::Anonymous)?;
                 }
                 Ok(())
@@ -205,7 +215,7 @@ impl TypeInferrer {
                     return Err(TypeError::ConditionNeedBool.into());
                 }
                 self.scope.enter(Tag::Named("while"));
-                self.infer_statement(body)?;
+                self.infer_statement(id_map, type_map, body)?;
                 self.scope.leave(Tag::Named("while"))?;
                 Ok(())
             }
@@ -241,8 +251,12 @@ impl TypeInferrer {
                         parameters,
                         function_type,
                     },
+                builtin,
                 body,
             }) => {
+                if *builtin {
+                    return Ok(());
+                }
                 self.scope.enter(Tag::Function(identifier.clone()));
 
                 let Type::Function {
@@ -250,7 +264,7 @@ impl TypeInferrer {
                     parameter_types,
                 } = function_type
                 else {
-                    return Err(TypeError::ShouldBeFunctionType.into());
+                    return Err(system_error!("must be a function type."));
                 };
                 parameters.iter().zip(parameter_types).try_for_each(
                     |(Parameter(identifier), parameter_type)| {
@@ -259,9 +273,17 @@ impl TypeInferrer {
                     },
                 )?;
 
-                self.infer_statement(body)?;
+                self.infer_statement(id_map, type_map, body)?;
 
                 self.scope.leave(Tag::Function(identifier.clone()))?;
+                Ok(())
+            }
+            Statement::Using(UsingPath(document_path, symbol)) => {
+                let used_document_id = id_map.get(document_path).unwrap();
+                let Some(symbol_type) = type_map.get(used_document_id).unwrap().get(symbol) else {
+                    return Err(system_error!("used symbol must exist"));
+                };
+                self.scope.declare(symbol.clone(), symbol_type.clone())?;
                 Ok(())
             }
         }
@@ -280,8 +302,8 @@ impl TypeInferrer {
         Ok(())
     }
 
-    fn pre_scan_global_items(&mut self, program: &Program) -> Result<(), CompileError> {
-        program
+    fn pre_scan_global_items(&mut self, document: &Document) -> Result<(), CompileError> {
+        document
             .statements
             .iter()
             .try_for_each(|statement| match statement {
@@ -291,7 +313,7 @@ impl TypeInferrer {
                 | Statement::Expression(_)
                 | Statement::If(_)
                 | Statement::While(_) => Err(TypeError::ProcessInGlobal.into()),
-                Statement::Let(_) => Ok(()),
+                Statement::Let(_) | Statement::Using(_) => Ok(()),
                 Statement::Define(define_detail) => {
                     self.pre_scan_function_prototype(&define_detail.prototype)
                 }
@@ -337,22 +359,16 @@ impl TypeInferrer {
     }
 
     /// # Errors
-    pub fn infer(&mut self, program: &mut Program) -> Result<(), CompileError> {
+    pub fn infer(&mut self, context: &mut Context, id: DocumentId) -> Result<(), CompileError> {
+        let document = context.document_map.get_mut(&id).unwrap();
         self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();
         self.scope.enter(Tag::Global);
-        self.pre_scan_global_items(program)?;
-        program
-            .statements
-            .iter_mut()
-            .try_for_each(|statement| self.infer_statement(statement))?;
+        self.pre_scan_global_items(document)?;
+        document.statements.iter_mut().try_for_each(|statement| {
+            self.infer_statement(&context.id_map, &context.type_map, statement)
+        })?;
         self.scope.leave(Tag::Global)?;
         Ok(())
-    }
-}
-
-impl Default for TypeInferrer {
-    fn default() -> Self {
-        Self::new()
     }
 }

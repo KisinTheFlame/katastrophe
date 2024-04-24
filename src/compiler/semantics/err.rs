@@ -45,6 +45,9 @@ pub enum TypeError {
         parameter_types: Vec<Type>,
         argument_types: Vec<Type>,
     },
+
+    UndeclaredMainFunction,
+    IllegalMainFunctionType,
 }
 
 impl InnerCompilerError for TypeError {}
@@ -95,6 +98,12 @@ impl ReportableError for TypeError {
                 argument types: {argument_types}"
                 )
             }
+            TypeError::UndeclaredMainFunction => {
+                panic!("main function not declared in input document.")
+            },
+            TypeError::IllegalMainFunctionType => {
+                panic!("the type of main function must be () -> i32.")
+            },
         }
     }
 }

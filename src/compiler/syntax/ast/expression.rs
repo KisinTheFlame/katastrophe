@@ -2,13 +2,15 @@ use std::fmt::{self, Display};
 
 use crate::util::pretty_format::{indent, PrettyFormat};
 
+use crate::compiler::syntax::ast::ty::Type;
+
 use super::{
+    crumb::Identifier,
     operator::{Binary, Unary},
-    Type,
 };
 
 pub enum Expression {
-    Identifier(String),
+    Identifier(Identifier),
 
     IntLiteral(i32),
     FloatLiteral(f64),
@@ -17,7 +19,7 @@ pub enum Expression {
     Unary(Unary, Type, Box<Expression>),
     Binary(Binary, Type, Box<Expression>, Box<Expression>),
 
-    Call(String, Vec<Expression>),
+    Call(Identifier, Vec<Expression>),
 }
 
 impl PrettyFormat for Expression {

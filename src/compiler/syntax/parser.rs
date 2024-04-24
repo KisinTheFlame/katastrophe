@@ -1,32 +1,46 @@
+use std::{collections::HashMap, mem};
+
 use crate::compiler::{
+    context::{next_document_id, Context, DocumentId},
     err::CompileError,
     lexis::{
         lexer::Lexer,
         token::{Keyword, Symbol, Token},
     },
+    scope::{Scope, Tag},
+    syntax::ast::package::load_package_path,
 };
 
 use super::{
     ast::{
-        crumb::{FunctionPrototype, Mutability, Parameter, Variable},
+        crumb::{FunctionPrototype, Identifier, Mutability, Parameter, Variable},
         expression::Expression,
         operator::{Binary, Operator, Unary},
+        package::{DocumentPath, UsingPath},
         statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
         ty::Type,
-        Program,
+        Document,
     },
     err::{ParseError, ParseErrorKind},
 };
 
 pub struct Parser {
     lexer: Lexer,
+    document_path: DocumentPath,
+    type_map: HashMap<Identifier, Type>,
+    mutability_map: HashMap<Identifier, Mutability>,
+    scope: Scope<()>,
 }
 
 impl Parser {
     #[must_use]
-    pub fn new(code: &str) -> Parser {
+    pub fn new(document_path: DocumentPath, code: &str) -> Parser {
         Parser {
             lexer: Lexer::new(code),
+            document_path,
+            type_map: HashMap::new(),
+            mutability_map: HashMap::new(),
+            scope: Scope::new(),
         }
     }
 
@@ -228,6 +242,7 @@ impl Parser {
             | Symbol::RightBrace
             | Symbol::Comma
             | Symbol::Semicolon
+            | Symbol::DoubleColon
             | Symbol::Arrow => None,
         }
     }
@@ -250,6 +265,15 @@ impl Parser {
             self.lexer.next();
 
             let rhs = self.parse_primary()?;
+
+            if !current_operator.is_left_associative() {
+                return Ok(Expression::Binary(
+                    current_operator,
+                    Type::Unknown,
+                    Box::new(lhs),
+                    Box::new(self.parse_binary_expression_rhs(0, rhs)?),
+                ));
+            }
 
             let Some(next_operator) = self.peek_binary_operator() else {
                 return Ok(Expression::Binary(
@@ -303,22 +327,22 @@ impl Parser {
         Ok(Statement::Expression(expression))
     }
 
-    fn parse_block_statement(&mut self) -> Result<Statement, CompileError> {
+    fn parse_block_statement(&mut self, context: &mut Context) -> Result<Statement, CompileError> {
         let mut statements = Vec::<Statement>::new();
         self.digest_symbol(Symbol::LeftBrace)?;
         while !self.expect_symbol(Symbol::RightBrace) {
-            let statement = self.parse_statement()?;
+            let statement = self.parse_statement(context)?;
             statements.push(statement);
         }
         Ok(Statement::Block(statements))
     }
 
-    fn parse_if_statement(&mut self) -> Result<IfDetail, CompileError> {
+    fn parse_if_statement(&mut self, context: &mut Context) -> Result<IfDetail, CompileError> {
         self.digest_keyword(Keyword::If)?;
         let condition = self.parse_expression()?;
-        let body = Box::new(self.parse_block_statement()?);
+        let body = Box::new(self.parse_block_statement(context)?);
         let else_body = if self.expect_keyword(Keyword::Else) {
-            Some(Box::new(self.parse_block_statement()?))
+            Some(Box::new(self.parse_block_statement(context)?))
         } else {
             None
         };
@@ -329,10 +353,13 @@ impl Parser {
         })
     }
 
-    fn parse_while_statement(&mut self) -> Result<WhileDetail, CompileError> {
+    fn parse_while_statement(
+        &mut self,
+        context: &mut Context,
+    ) -> Result<WhileDetail, CompileError> {
         self.digest_keyword(Keyword::While)?;
         let condition = self.parse_expression()?;
-        let body = Box::new(self.parse_block_statement()?);
+        let body = Box::new(self.parse_block_statement(context)?);
         Ok(WhileDetail(condition, body))
     }
 
@@ -413,11 +440,28 @@ impl Parser {
         })
     }
 
-    fn parse_define_statement(&mut self) -> Result<DefineDetail, CompileError> {
+    fn parse_define_statement(
+        &mut self,
+        context: &mut Context,
+    ) -> Result<DefineDetail, CompileError> {
         self.digest_keyword(Keyword::Define)?;
+        let builtin = self.expect_keyword(Keyword::Builtin);
         let prototype = self.parse_function_prototype()?;
-        let body = Box::new(self.parse_block_statement()?);
-        Ok(DefineDetail { prototype, body })
+        let identifier = &prototype.identifier;
+        if self.scope.is_global()? {
+            let function_type = prototype.function_type.clone();
+            self.type_map.insert(identifier.clone(), function_type);
+            self.mutability_map
+                .insert(identifier.clone(), Mutability::Immutable);
+        }
+        self.scope.enter(Tag::Function(identifier.clone()));
+        let body = Box::new(self.parse_block_statement(context)?);
+        self.scope.leave(Tag::Function(identifier.clone()))?;
+        Ok(DefineDetail {
+            prototype,
+            builtin,
+            body,
+        })
     }
 
     fn parse_let_statement(&mut self) -> Result<LetDetail, CompileError> {
@@ -436,6 +480,10 @@ impl Parser {
         self.digest_symbol(Symbol::Assign)?;
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;
+        if self.scope.is_global()? {
+            self.type_map.insert(lvalue.clone(), lvalue_type.clone());
+            self.mutability_map.insert(lvalue.clone(), mutability);
+        }
         Ok(LetDetail(
             Variable(lvalue, lvalue_type, mutability),
             expression,
@@ -452,19 +500,46 @@ impl Parser {
         Ok(Statement::Return(Some(expression)))
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, CompileError> {
+    fn parse_using_statement(&mut self, context: &mut Context) -> Result<Statement, CompileError> {
+        self.digest_keyword(Keyword::Using)?;
+        let mut path_nodes = Vec::new();
+        path_nodes.push(self.parse_plain_identifier()?);
+        while self.expect_symbol(Symbol::DoubleColon) {
+            path_nodes.push(self.parse_plain_identifier()?);
+        }
+        self.digest_symbol(Symbol::Semicolon)?;
+        let Some((item, path_nodes)) = path_nodes.split_last() else {
+            return Err(ParseError {
+                kind: ParseErrorKind::MissingIdentifier,
+            }
+            .into());
+        };
+        let path_nodes = path_nodes.iter().cloned().collect::<Vec<_>>();
+        let document_path = DocumentPath(path_nodes);
+        load_package_path(context, &document_path)?;
+        let using_path = UsingPath(document_path, item.clone());
+        Ok(Statement::Using(using_path))
+    }
+
+    fn parse_statement(&mut self, context: &mut Context) -> Result<Statement, CompileError> {
         match self.lexer.peek() {
             Some(Token::Keyword(Keyword::Return)) => self.parse_return_statement(),
-            Some(Token::Keyword(Keyword::If)) => Ok(Statement::If(self.parse_if_statement()?)),
-            Some(Token::Keyword(Keyword::While)) => {
-                Ok(Statement::While(self.parse_while_statement()?))
+            Some(Token::Keyword(Keyword::If)) => {
+                Ok(Statement::If(self.parse_if_statement(context)?))
             }
-            Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(),
+            Some(Token::Keyword(Keyword::While)) => {
+                Ok(Statement::While(self.parse_while_statement(context)?))
+            }
+            Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(context),
             Some(Token::Keyword(Keyword::Define)) => {
-                Ok(Statement::Define(self.parse_define_statement()?))
+                Ok(Statement::Define(self.parse_define_statement(context)?))
             }
             Some(Token::Keyword(Keyword::Let)) => Ok(Statement::Let(self.parse_let_statement()?)),
             Some(Token::Symbol(Symbol::Semicolon)) => self.parse_empty_statement(),
+            Some(Token::Keyword(Keyword::Using)) => {
+                let statement = self.parse_using_statement(context)?;
+                Ok(statement)
+            }
             Some(_) => self.parse_expression_statement(),
             None => Err(ParseError {
                 kind: ParseErrorKind::UnexpectedEOF,
@@ -474,11 +549,26 @@ impl Parser {
     }
 
     /// # Errors
-    pub fn parse_program(&mut self) -> Result<Program, CompileError> {
+    pub fn parse_document(&mut self, context: &mut Context) -> Result<DocumentId, CompileError> {
+        let id = next_document_id();
+        context.id_map.insert(self.document_path.clone(), id);
+        context.path_map.insert(id, self.document_path.clone());
+
+        self.scope.enter(Tag::Global);
         let mut statements = Vec::<Statement>::new();
         while self.lexer.peek().is_some() {
-            statements.push(self.parse_statement()?);
+            statements.push(self.parse_statement(context)?);
         }
-        Ok(Program { statements })
+        self.scope.leave(Tag::Global)?;
+
+        let document = Document { statements };
+        context.document_map.insert(id, document);
+        context
+            .type_map
+            .insert(id, mem::replace(&mut self.type_map, HashMap::new()));
+        context
+            .mutability_map
+            .insert(id, mem::replace(&mut self.mutability_map, HashMap::new()));
+        Ok(id)
     }
 }
