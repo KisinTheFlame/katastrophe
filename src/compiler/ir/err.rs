@@ -1,8 +1,8 @@
 use crate::{compiler::err::InnerCompilerError, util::reportable_error::ReportableError};
 
 pub enum IrError {
-    UndefinedMain,
     BuiltinFileNotExist,
+    BuiltinFunctionFileNotExist(String),
 }
 
 impl InnerCompilerError for IrError {}
@@ -10,11 +10,11 @@ impl InnerCompilerError for IrError {}
 impl ReportableError for IrError {
     fn report(&self) -> ! {
         match &self {
-            IrError::UndefinedMain => {
-                panic!("main function not found in global scope.");
-            }
             IrError::BuiltinFileNotExist => {
                 panic!("builtin file not exist.");
+            }
+            IrError::BuiltinFunctionFileNotExist(identifier) => {
+                panic!("builtin function {identifier} file not exist")
             }
         }
     }

@@ -1,13 +1,17 @@
-use crate::compiler::{
-    err::CompileError,
-    scope::{Scope, Tag},
-    syntax::ast::{
-        crumb::{FunctionPrototype, Mutability, Parameter, Variable},
-        expression::Expression,
-        operator::Binary,
-        statement::{DefineDetail, LetDetail, Statement, WhileDetail},
-        Program,
+use crate::{
+    compiler::{
+        context::{Context, DocumentId},
+        err::CompileError,
+        scope::{Scope, Tag},
+        syntax::ast::{
+            crumb::{FunctionPrototype, Mutability, Parameter, Variable},
+            expression::Expression,
+            operator::Binary,
+            package::UsingPath,
+            statement::{DefineDetail, LetDetail, Statement, WhileDetail},
+        },
     },
+    system_error,
 };
 
 use super::err::SemanticError;
@@ -27,22 +31,31 @@ impl MutabilityChecker {
     }
 
     /// # Errors
-    pub fn check_program(&mut self, program: &Program) -> Result<(), CompileError> {
+    pub fn check_document(
+        &mut self,
+        context: &Context,
+        document_id: DocumentId,
+    ) -> Result<(), CompileError> {
+        let document = context.document_map.get(&document_id).unwrap();
         self.scope.enter(Tag::Global);
-        program
+        document
             .statements
             .iter()
-            .try_for_each(|statement| self.check_statement(statement))?;
+            .try_for_each(|statement| self.check_statement(context, statement))?;
         self.scope.leave(Tag::Global)?;
         Ok(())
     }
 
-    fn check_statement(&mut self, statement: &Statement) -> Result<(), CompileError> {
+    fn check_statement(
+        &mut self,
+        context: &Context,
+        statement: &Statement,
+    ) -> Result<(), CompileError> {
         match statement {
             Statement::Empty | Statement::Return(_) => Ok(()),
             Statement::Block(statements) => statements
                 .iter()
-                .try_for_each(|statement| self.check_statement(statement)),
+                .try_for_each(|statement| self.check_statement(context, statement)),
             Statement::Define(DefineDetail {
                 prototype:
                     FunctionPrototype {
@@ -50,32 +63,36 @@ impl MutabilityChecker {
                         parameters,
                         function_type: _,
                     },
+                builtin,
                 body,
             }) => {
+                if *builtin {
+                    return Ok(());
+                }
                 self.scope.enter(Tag::Function(identifier.clone()));
                 parameters.iter().try_for_each(|Parameter(identifier)| {
                     self.scope
                         .declare(identifier.clone(), Mutability::Immutable)
                 })?;
-                self.check_statement(body)?;
+                self.check_statement(context, body)?;
                 self.scope.leave(Tag::Function(identifier.clone()))?;
                 Ok(())
             }
             Statement::If(if_detail) => {
                 self.scope.enter(Tag::Anonymous);
-                self.check_statement(&if_detail.true_body)?;
+                self.check_statement(context, &if_detail.true_body)?;
                 self.scope.leave(Tag::Anonymous)?;
 
                 if_detail.false_body.as_ref().map_or(Ok(()), |body| {
                     self.scope.enter(Tag::Anonymous);
-                    self.check_statement(body)?;
+                    self.check_statement(context, body)?;
                     self.scope.leave(Tag::Anonymous)?;
                     Ok(())
                 })
             }
             Statement::While(WhileDetail(_, body)) => {
                 self.scope.enter(Tag::Named("while"));
-                self.check_statement(body)?;
+                self.check_statement(context, body)?;
                 self.scope.leave(Tag::Named("while"))?;
                 Ok(())
             }
@@ -91,6 +108,14 @@ impl MutabilityChecker {
                 Expression::Binary(Binary::Assign, _, lvalue, _) => self.check_lvalue(lvalue),
                 _ => Ok(()),
             },
+            Statement::Using(UsingPath(document_path, symbol)) => {
+                let id = context.id_map.get(document_path).unwrap();
+                let Some(mutability) = context.mutability_map.get(id).unwrap().get(symbol) else {
+                    return Err(system_error!("used symbol must exist"));
+                };
+                self.scope.declare(symbol.clone(), *mutability)?;
+                Ok(())
+            }
         }
     }
 
@@ -113,11 +138,5 @@ impl MutabilityChecker {
             | Expression::Binary(_, _, _, _)
             | Expression::Call(_, _) => Err(SemanticError::IllegalLValue.into()),
         }
-    }
-}
-
-impl Default for MutabilityChecker {
-    fn default() -> Self {
-        Self::new()
     }
 }

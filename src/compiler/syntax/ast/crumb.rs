@@ -2,7 +2,9 @@ use std::fmt::{self, Display};
 
 use super::ty::Type;
 
-pub struct Parameter(pub String);
+pub type Identifier = String;
+
+pub struct Parameter(pub Identifier);
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -12,7 +14,7 @@ impl Display for Parameter {
 }
 
 pub struct FunctionPrototype {
-    pub identifier: String,
+    pub identifier: Identifier,
     pub parameters: Vec<Parameter>,
     pub function_type: Type,
 }
@@ -32,4 +34,4 @@ impl Display for Mutability {
     }
 }
 
-pub struct Variable(pub String, pub Type, pub Mutability);
+pub struct Variable(pub Identifier, pub Type, pub Mutability);

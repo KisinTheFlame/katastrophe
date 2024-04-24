@@ -9,7 +9,9 @@ use self::ir_type::IrType;
 
 pub mod ir_type;
 
-pub type IrScope = Scope<(Value, IrType)>;
+pub type IrModel = (Value, IrType);
+
+pub type IrScope = Scope<IrModel>;
 
 #[derive(Clone)]
 pub enum Value {
@@ -119,6 +121,7 @@ pub enum Instruction {
     },
     Batch(Vec<Instruction>),
     Definition(IrFunctionPrototype, Vec<Value>, Box<Instruction>),
+    BuiltinDefinition(String),
     Binary {
         operator: IrBinaryOpcode,
         data_type: IrType,
@@ -132,10 +135,10 @@ pub enum Instruction {
         to: Value,
     },
     Bitcast {
-        from: (Value, IrType),
-        to: (Value, IrType),
+        from: IrModel,
+        to: IrModel,
     },
-    Allocate(Value, IrType),
+    Allocate(IrModel),
     Load {
         data_type: IrType,
         from: Value,
@@ -283,6 +286,7 @@ impl PrettyFormat for Instruction {
                 Ok(())
             }
             Instruction::Definition(_, _, _) => self.format_definition(f, indentation_num),
+            Instruction::BuiltinDefinition(ir_code) => writeln!(f, "{ir_code}"),
             Instruction::Binary {
                 operator,
                 data_type,
@@ -309,7 +313,7 @@ impl PrettyFormat for Instruction {
                     "{indentation}{to_value} = bitcast {from_type} {from_value} to {to_type}"
                 )
             }
-            Instruction::Allocate(pointer, data_type) => {
+            Instruction::Allocate((pointer, data_type)) => {
                 writeln!(f, "{indentation}{pointer} = alloca {data_type}")
             }
             Instruction::Load {

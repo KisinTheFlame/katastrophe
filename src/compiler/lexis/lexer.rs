@@ -1,4 +1,4 @@
-use crate::util::reportable_error::ReportableError;
+use crate::{compiler::err::CompileError, system_error, util::reportable_error::ReportableError};
 
 use super::{
     err::{LexError, LexErrorKind},
@@ -38,22 +38,47 @@ impl Lexer {
         }
     }
 
-    fn pump_token(&mut self) -> Result<(), LexError> {
+    fn pump_token(&mut self) -> Result<(), CompileError> {
+        self.reader.skip_spaces();
+        self.next_token = self.digest_token()?;
+        Ok(())
+    }
+
+    fn digest_token(&mut self) -> Result<Option<Token>, CompileError> {
         self.reader.skip_spaces();
         if let Some(c) = self.reader.peek() {
             let token = match c {
-                '0'..='9' => self.digest_number()?,
-                'a'..='z' | 'A'..='Z' | '_' => self.digest_identifier_or_keyword_or_bool()?,
-                _ => self.digest_symbol()?,
+                '0'..='9' => Some(self.digest_number()?),
+                'a'..='z' | 'A'..='Z' | '_' => Some(self.digest_identifier_or_keyword_or_bool()?),
+                '#' => {
+                    self.digest_comment()?;
+                    self.digest_token()?
+                }
+                _ => Some(self.digest_symbol()?),
             };
-            self.next_token = Some(token);
+            return Ok(token);
         } else {
-            self.next_token = None;
+            return Ok(None);
+        }
+    }
+
+    fn digest_comment(&mut self) -> Result<(), CompileError> {
+        if let Some('#') = self.reader.peek() {
+            self.reader.forward();
+        } else {
+            return Err(system_error!("must be a #"));
+        }
+        while let Some(c) = self.reader.peek() {
+            if c != '\n' {
+                self.reader.forward()
+            } else {
+                break;
+            }
         }
         Ok(())
     }
 
-    fn digest_number(&mut self) -> Result<Token, LexError> {
+    fn digest_number(&mut self) -> Result<Token, CompileError> {
         let mut number = String::new();
         while let Some(c) = self.reader.peek() {
             if !(c.is_numeric() || c == '.') {
@@ -67,14 +92,16 @@ impl Lexer {
                 Ok(x) => Ok(Token::FloatLiteral(x)),
                 Err(_) => Err(LexError {
                     kind: LexErrorKind::IllegalFloatLiteral(number),
-                }),
+                }
+                .into()),
             }
         } else {
             match number.parse::<i32>() {
                 Ok(x) => Ok(Token::IntLiteral(x)),
                 Err(_) => Err(LexError {
                     kind: LexErrorKind::IllegalIntegerLiteral(number),
-                }),
+                }
+                .into()),
             }
         }
     }
@@ -190,6 +217,16 @@ impl Lexer {
             '}' => Symbol::RightBrace,
             ',' => Symbol::Comma,
             ';' => Symbol::Semicolon,
+            ':' => {
+                if self.expect(':') {
+                    Symbol::DoubleColon
+                } else {
+                    return Err(LexError {
+                        kind: LexErrorKind::UnexpectedCharacter(':'),
+                    }
+                    .into());
+                }
+            }
             c => {
                 return Err(LexError {
                     kind: LexErrorKind::UnexpectedCharacter(c),

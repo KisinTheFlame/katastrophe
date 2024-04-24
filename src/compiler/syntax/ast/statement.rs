@@ -2,7 +2,12 @@ use std::fmt;
 
 use crate::util::pretty_format::{indent, PrettyFormat};
 
-use super::{crumb::FunctionPrototype, crumb::Variable, expression::Expression, Type};
+use super::{
+    crumb::{FunctionPrototype, Variable},
+    expression::Expression,
+    package::UsingPath,
+    ty::Type,
+};
 
 pub struct IfDetail {
     pub condition: Expression,
@@ -16,6 +21,7 @@ pub struct WhileDetail(pub Expression, pub Box<Statement>);
 
 pub struct DefineDetail {
     pub prototype: FunctionPrototype,
+    pub builtin: bool,
     pub body: Box<Statement>,
 }
 
@@ -28,6 +34,7 @@ pub enum Statement {
     Let(LetDetail),
     While(WhileDetail),
     Define(DefineDetail),
+    Using(UsingPath),
 }
 
 impl PrettyFormat for Statement {
@@ -81,6 +88,7 @@ impl PrettyFormat for Statement {
                         parameters,
                         function_type,
                     },
+                builtin,
                 body,
             }) => {
                 let Type::Function {
@@ -96,11 +104,15 @@ impl PrettyFormat for Statement {
                     .map(|(parameter, param_type)| format!("{parameter} as {param_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");
+                let builtin = if *builtin { "builtin " } else { "" };
                 writeln!(
                     f,
-                    "{indent}Define {identifier}({parameters}) -> {return_type}"
+                    "{indent}Define {builtin}{identifier}({parameters}) -> {return_type}"
                 )?;
                 body.pretty_format(f, indentation_num + 1)?;
+            }
+            Statement::Using(path) => {
+                writeln!(f, "{indent}Using {path}")?;
             }
         };
         Ok(())

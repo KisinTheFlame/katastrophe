@@ -1,21 +1,25 @@
+use std::collections::HashMap;
+
 use crate::{
     compiler::{
+        context::{Context, DocumentId},
         err::CompileError,
         scope::Tag,
         syntax::ast::{
             crumb::{FunctionPrototype, Mutability, Parameter, Variable},
             expression::Expression,
             operator::{Binary, Unary},
+            package::{get_builtin, DocumentPath, UsingPath},
             statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
             ty::Type,
-            Program,
+            Document,
         },
     },
     system_error,
 };
 
+use super::{err::IrError, instruction::IrScope};
 use super::{
-    builtin::{deinit_builtin_scope, init_builtin_scope},
     id::{
         next_anonymous_id, next_function_id, next_global_id, next_label_id, next_parameter_id,
         next_variable_id,
@@ -24,16 +28,17 @@ use super::{
         ir_type::IrType, Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, Value,
     },
 };
-use super::{err::IrError, instruction::IrScope};
 
 pub struct Translator {
+    document_path: DocumentPath,
     scope: IrScope,
 }
 
 impl Translator {
     #[must_use]
-    pub fn new() -> Translator {
+    pub fn new(document_path: DocumentPath) -> Translator {
         Translator {
+            document_path,
             scope: IrScope::new(),
         }
     }
@@ -112,12 +117,13 @@ impl Translator {
 
     fn translate_block_statement(
         &mut self,
+        context: &Context,
         statements: &[Statement],
     ) -> Result<Instruction, CompileError> {
         self.scope.enter(Tag::Named("block"));
         let instructions = statements
             .iter()
-            .map(|statement| self.translate_statement(statement))
+            .map(|statement| self.translate_statement(context, statement))
             .collect::<Result<Vec<_>, _>>()?;
         self.scope.leave(Tag::Named("block"))?;
         Ok(Instruction::Batch(instructions))
@@ -350,6 +356,7 @@ impl Translator {
     ///
     fn translate_if_statement(
         &mut self,
+        context: &Context,
         if_detail: &IfDetail,
     ) -> Result<Instruction, CompileError> {
         let IfDetail {
@@ -371,11 +378,11 @@ impl Translator {
             when_false: when_false.clone(),
         };
         let when_true_label = Instruction::Label(when_true);
-        let body_instructions = self.translate_statement(true_body)?;
+        let body_instructions = self.translate_statement(context, true_body)?;
         let jump_true_to_end = Instruction::Jump(if_end.clone());
         let when_false_label = Instruction::Label(when_false);
         let false_body_instructions = match false_body {
-            Some(statement) => self.translate_statement(statement)?,
+            Some(statement) => self.translate_statement(context, statement)?,
             None => Instruction::NoOperation,
         };
         let jump_false_to_end = Instruction::Jump(if_end.clone());
@@ -418,6 +425,7 @@ impl Translator {
     ///
     fn translate_while_statement(
         &mut self,
+        context: &Context,
         WhileDetail(condition, body): &WhileDetail,
     ) -> Result<Instruction, CompileError> {
         let check_point = self.declare_label("check_point");
@@ -433,7 +441,7 @@ impl Translator {
             when_false: loop_end.clone(),
         };
         let loop_start_label = Instruction::Label(loop_start);
-        let body_instructions = self.translate_statement(body)?;
+        let body_instructions = self.translate_statement(context, body)?;
         let jump_back_to_check_point = Instruction::Jump(check_point);
         let loop_end_label = Instruction::Label(loop_end);
 
@@ -479,7 +487,7 @@ impl Translator {
             (false, Mutability::Mutable) => {
                 let lvalue = self.declare_mutable(identifier.clone(), data_type.clone())?;
                 Instruction::Batch(vec![
-                    Instruction::Allocate(lvalue.clone(), data_type.clone()),
+                    Instruction::Allocate((lvalue.clone(), data_type.clone())),
                     Instruction::Store {
                         data_type,
                         from: expression,
@@ -532,6 +540,7 @@ impl Translator {
 
     fn translate_define_statement(
         &mut self,
+        context: &Context,
         DefineDetail {
             prototype:
                 FunctionPrototype {
@@ -539,12 +548,19 @@ impl Translator {
                     parameters,
                     function_type: _,
                 },
+            builtin,
             body,
         }: &DefineDetail,
     ) -> Result<Instruction, CompileError> {
         let Some((function, function_type)) = self.scope.lookup(identifier)? else {
             return Err(system_error!("must pre scanned it."));
         };
+        if *builtin {
+            let Some(ir_code) = get_builtin(&self.document_path, identifier, &function) else {
+                return Err(IrError::BuiltinFunctionFileNotExist(identifier.clone()).into());
+            };
+            return Ok(Instruction::BuiltinDefinition(ir_code));
+        }
         let IrType::Function {
             ref return_type,
             parameter_types: _,
@@ -559,7 +575,7 @@ impl Translator {
             .map(|Parameter(identifier)| self.declare_parameter(identifier.clone(), IrType::I32))
             .collect::<Result<Vec<_>, _>>()?;
         let body = Instruction::Batch(vec![
-            self.translate_statement(body)?,
+            self.translate_statement(context, body)?,
             if let IrType::Void = return_type.as_ref() {
                 Instruction::ReturnVoid
             } else {
@@ -579,47 +595,59 @@ impl Translator {
         ))
     }
 
-    fn translate_statement(&mut self, statement: &Statement) -> Result<Instruction, CompileError> {
+    fn translate_statement(
+        &mut self,
+        context: &Context,
+        statement: &Statement,
+    ) -> Result<Instruction, CompileError> {
         match statement {
             Statement::Empty => Ok(Instruction::NoOperation),
-            Statement::Block(statements) => self.translate_block_statement(statements),
+            Statement::Block(statements) => self.translate_block_statement(context, statements),
             Statement::Return(return_value) => {
                 self.translate_return_statement(return_value.as_ref())
             }
             Statement::Expression(expression) => self.translate_expression_statement(expression),
-            Statement::If(if_detail) => self.translate_if_statement(if_detail),
-            Statement::While(while_detail) => self.translate_while_statement(while_detail),
+            Statement::If(if_detail) => self.translate_if_statement(context, if_detail),
+            Statement::While(while_detail) => self.translate_while_statement(context, while_detail),
             Statement::Let(let_detail) => self.translate_let_statement(let_detail),
-            Statement::Define(define_detail) => self.translate_define_statement(define_detail),
+            Statement::Define(define_detail) => {
+                self.translate_define_statement(context, define_detail)
+            }
+            Statement::Using(UsingPath(document_path, symbol)) => {
+                let id = context.id_map.get(document_path).unwrap();
+                let Some((value, ir_type)) = context.ir_model_map.get(id).unwrap().get(symbol)
+                else {
+                    return Err(system_error!("used symbol must exist"));
+                };
+                self.scope
+                    .declare(symbol.clone(), (value.clone(), ir_type.clone()))?;
+                Ok(Instruction::NoOperation)
+            }
         }
     }
 
-    fn translate_program(&mut self, program: &Program) -> Result<Instruction, CompileError> {
-        let instructions = program
+    fn translate_document(
+        &mut self,
+        context: &Context,
+        document: &Document,
+    ) -> Result<Instruction, CompileError> {
+        let instructions = document
             .statements
             .iter()
-            .map(|statement| self.translate_statement(statement))
+            .map(|statement| self.translate_statement(context, statement))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Instruction::Batch(instructions))
     }
 
-    fn generate_main(&mut self) -> Result<String, CompileError> {
-        let Some((main_id, _)) = self.scope.lookup(&String::from("main"))? else {
-            return Err(IrError::UndefinedMain.into());
-        };
-        let template = format!(
-            "\
-define i32 @main() {{
-    %main_return = call i32 {main_id}()
-    ret i32 %main_return
-}}\
-            "
-        );
-        Ok(template)
-    }
-
-    fn pre_scan_global(&mut self, program: &Program) -> Result<(), CompileError> {
-        program
+    pub fn pre_scan_global(
+        &mut self,
+        context: &mut Context,
+        document_id: DocumentId,
+    ) -> Result<(), CompileError> {
+        self.scope.enter(Tag::Global);
+        let document = context.document_map.get(&document_id).unwrap();
+        let mut ir_model_map = HashMap::new();
+        document
             .statements
             .iter()
             .try_for_each(|statement| match statement {
@@ -631,14 +659,15 @@ define i32 @main() {{
                 | Statement::While(_) => Err(system_error!("unchecked global procedures")),
                 Statement::Let(LetDetail(Variable(identifier, var_type, mutability), _)) => {
                     let data_type = IrType::from(var_type);
-                    match mutability {
+                    let value = match mutability {
                         Mutability::Mutable => {
-                            self.declare_global(identifier.clone(), data_type)?
+                            self.declare_global(identifier.clone(), data_type.clone())?
                         }
                         Mutability::Immutable => {
-                            self.declare_constant(identifier.clone(), data_type)?
+                            self.declare_constant(identifier.clone(), data_type.clone())?
                         }
                     };
+                    ir_model_map.insert(identifier.clone(), (value, data_type));
                     Ok(())
                 }
                 Statement::Define(DefineDetail {
@@ -648,35 +677,30 @@ define i32 @main() {{
                             parameters: _,
                             function_type,
                         },
+                    builtin: _,
                     body: _,
                 }) => {
                     let function_type = IrType::from(function_type);
-                    self.declare_function(identifier.clone(), function_type.clone())?;
+                    let value = self.declare_function(identifier.clone(), function_type.clone())?;
+                    ir_model_map.insert(identifier.clone(), (value, function_type));
                     Ok(())
                 }
+                Statement::Using(_) => Ok(()),
             })?;
+        context.ir_model_map.insert(document_id, ir_model_map);
         Ok(())
     }
 
     /// # Errors
-    pub fn translate(&mut self, program: &Program) -> Result<String, CompileError> {
-        let mut llvm_code = String::new();
-        init_builtin_scope(&mut self.scope, &mut llvm_code)?;
-        self.scope.enter(Tag::Global);
-        self.pre_scan_global(program)?;
-        let user_program = self.translate_program(program)?;
-        let user_program = user_program.to_string();
-        llvm_code.push_str(&user_program);
-        let main = self.generate_main()?;
-        llvm_code.push_str(&main);
+    pub fn translate(
+        &mut self,
+        context: &mut Context,
+        document_id: DocumentId,
+    ) -> Result<(), CompileError> {
+        let document = context.document_map.get(&document_id).unwrap();
+        let instruction = self.translate_document(context, document)?;
+        context.instruction.insert(document_id, instruction);
         self.scope.leave(Tag::Global)?;
-        deinit_builtin_scope(&mut self.scope)?;
-        Ok(llvm_code)
-    }
-}
-
-impl Default for Translator {
-    fn default() -> Self {
-        Self::new()
+        Ok(())
     }
 }

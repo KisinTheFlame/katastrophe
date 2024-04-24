@@ -12,6 +12,7 @@ pub enum Keyword {
     While,
     As,
     Mut,
+    Builtin,
 }
 
 static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
@@ -26,6 +27,7 @@ static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
             ("while", Keyword::While),
             ("as", Keyword::As),
             ("mut", Keyword::Mut),
+            ("builtin", Keyword::Builtin),
         ]
         .map(|(s, k)| (s, k)),
     )
@@ -74,6 +76,7 @@ pub enum Symbol {
 
     Comma,
     Semicolon,
+    DoubleColon,
 
     Arrow,
 }
@@ -86,6 +89,5 @@ pub enum Token {
     BoolLiteral(bool),
 
     Keyword(Keyword),
-
     Symbol(Symbol),
 }

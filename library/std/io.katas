@@ -1,0 +1,7 @@
+def builtin getchar() -> i32 {
+    # builtin
+}
+
+def builtin putchar(c as i32) -> bool {
+    # builtin
+}
