@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::util::pretty_format::{indent, PrettyFormat};
 
 use super::{crumb::FunctionPrototype, crumb::Variable, expression::Expression, Type};
@@ -29,11 +31,7 @@ pub enum Statement {
 }
 
 impl PrettyFormat for Statement {
-    fn pretty_format(
-        &self,
-        f: &mut std::fmt::Formatter,
-        indentation_num: usize,
-    ) -> std::fmt::Result {
+    fn pretty_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
         let indent = indent(indentation_num);
         match self {
             Statement::Empty => {}
