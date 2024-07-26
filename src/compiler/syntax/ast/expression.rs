@@ -21,11 +21,7 @@ pub enum Expression {
 }
 
 impl PrettyFormat for Expression {
-    fn pretty_format(
-        &self,
-        f: &mut std::fmt::Formatter,
-        indentation_num: usize,
-    ) -> std::fmt::Result {
+    fn pretty_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
         let indentation = indent(indentation_num);
         match self {
             Expression::Identifier(identifier) => {

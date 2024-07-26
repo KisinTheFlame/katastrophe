@@ -16,11 +16,7 @@ pub struct Program {
 }
 
 impl PrettyFormat for Program {
-    fn pretty_format(
-        &self,
-        f: &mut std::fmt::Formatter,
-        indentation_num: usize,
-    ) -> std::fmt::Result {
+    fn pretty_format(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
         self.statements
             .iter()
             .try_for_each(|statement| statement.pretty_format(f, indentation_num))
