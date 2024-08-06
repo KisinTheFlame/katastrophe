@@ -216,7 +216,7 @@ fn execute() -> Result<(), CompileError> {
             let document_path = context.path_map.get(id).unwrap();
             let ir = context.instruction.get(id).unwrap();
             formatdoc! {"
-                ----- {document_path} -----
+                ; ----- {document_path} -----
                 {ir}
             "}
         })
