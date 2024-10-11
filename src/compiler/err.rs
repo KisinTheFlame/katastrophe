@@ -1,19 +1,19 @@
-use crate::util::{either::Either, reportable_error::ReportableError};
+use std::rc::Rc;
 
-pub trait InnerCompilerError: ReportableError {}
+use crate::util::{either::Either, reportable_error::Reportable};
 
 #[macro_export]
-macro_rules! system_error {
+macro_rules! sys_error {
     ($($arg:tt)*) => {
-        CompileError::from(format!($($arg)*))
+        Err(CompileError::from(format!($($arg)*)))
     };
 }
 
-pub struct CompileError(Either<Box<dyn InnerCompilerError>, String>);
+pub struct CompileError(Either<Rc<dyn Reportable>, String>);
 
-impl<T: InnerCompilerError + 'static> From<T> for CompileError {
+impl<T: Reportable + 'static> From<T> for CompileError {
     fn from(value: T) -> Self {
-        CompileError(Either::Left(Box::new(value)))
+        CompileError(Either::Left(Rc::new(value)))
     }
 }
 
@@ -23,8 +23,9 @@ impl From<String> for CompileError {
     }
 }
 
-impl ReportableError for CompileError {
-    fn report(&self) -> ! {
+impl CompileError {
+    /// # Panics
+    pub fn report(&self) -> ! {
         let CompileError(reason) = self;
         match reason {
             Either::Left(reason) => reason.report(),

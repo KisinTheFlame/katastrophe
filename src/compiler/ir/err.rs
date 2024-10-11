@@ -1,13 +1,13 @@
-use crate::{compiler::err::InnerCompilerError, util::reportable_error::ReportableError};
+use std::rc::Rc;
+
+use crate::{compiler::syntax::ast::crumb::Identifier, util::reportable_error::Reportable};
 
 pub enum IrError {
     BuiltinFileNotExist,
-    BuiltinFunctionFileNotExist(String),
+    BuiltinFunctionFileNotExist(Rc<Identifier>),
 }
 
-impl InnerCompilerError for IrError {}
-
-impl ReportableError for IrError {
+impl Reportable for IrError {
     fn report(&self) -> ! {
         match &self {
             IrError::BuiltinFileNotExist => {

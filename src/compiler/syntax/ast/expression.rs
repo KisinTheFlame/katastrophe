@@ -1,5 +1,7 @@
 use std::fmt::{self, Display};
+use std::rc::Rc;
 
+use crate::util::common::Array;
 use crate::util::pretty_format::{indent, PrettyFormat};
 
 use crate::compiler::syntax::ast::ty::Type;
@@ -9,17 +11,18 @@ use super::{
     operator::{Binary, Unary},
 };
 
+#[derive(Clone)]
 pub enum Expression {
-    Identifier(Identifier),
+    Identifier(Rc<Identifier>),
 
     IntLiteral(i32),
     FloatLiteral(f64),
     BoolLiteral(bool),
 
-    Unary(Unary, Type, Box<Expression>),
-    Binary(Binary, Type, Box<Expression>, Box<Expression>),
+    Unary(Unary, Rc<Type>, Rc<Expression>),
+    Binary(Binary, Rc<Type>, Rc<Expression>, Rc<Expression>),
 
-    Call(Identifier, Vec<Expression>),
+    Call(Rc<Identifier>, Array<Rc<Expression>>),
 }
 
 impl PrettyFormat for Expression {

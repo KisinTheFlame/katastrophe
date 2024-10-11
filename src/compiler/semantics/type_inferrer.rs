@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{
     compiler::{
@@ -6,25 +6,26 @@ use crate::{
         err::CompileError,
         scope::{Scope, Tag},
         syntax::ast::{
-            crumb::{FunctionPrototype, Identifier, Parameter, Variable},
+            crumb::{FunctionPrototype, Parameter, Variable},
             expression::Expression,
             operator::{Binary, Unary},
-            package::{DocumentPath, UsingPath},
+            package::UsingPath,
             statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
             ty::Type,
             Document,
         },
     },
-    system_error,
+    sys_error,
+    util::common::Array,
 };
 
 use super::err::{SemanticError, TypeError};
 
-type TypeScope = Scope<Type>;
+type TypeScope = Scope<Rc<Type>>;
 
 pub struct TypeInferrer {
-    unary_operation_type_map: HashMap<(Unary, Type), Type>,
-    binary_operation_type_map: HashMap<(Binary, Type, Type), Type>,
+    unary_operation_type_map: HashMap<(Unary, Rc<Type>), Rc<Type>>,
+    binary_operation_type_map: HashMap<(Binary, Rc<Type>, Rc<Type>), Rc<Type>>,
     scope: TypeScope,
 }
 
@@ -40,42 +41,220 @@ impl TypeInferrer {
 
     fn infer_binary_operation_type(
         &self,
-        index: &(Binary, Type, Type),
-    ) -> Result<Type, CompileError> {
+        index: &(Binary, Rc<Type>, Rc<Type>),
+    ) -> Result<Rc<Type>, CompileError> {
         self.binary_operation_type_map
             .get(index)
             .cloned()
             .ok_or(TypeError::UndefinedOperation.into())
     }
 
-    fn infer_unary_operation_type(&self, index: &(Unary, Type)) -> Result<Type, CompileError> {
+    fn infer_unary_operation_type(
+        &self,
+        index: &(Unary, Rc<Type>),
+    ) -> Result<Rc<Type>, CompileError> {
         self.unary_operation_type_map
             .get(index)
             .cloned()
             .ok_or(TypeError::UndefinedOperation.into())
     }
 
-    fn infer_lvalue(&self, lvalue: &Expression) -> Result<Type, CompileError> {
-        match lvalue {
-            Expression::Identifier(identifier) => {
-                if let Some(var_type) = self.scope.lookup(identifier)? {
-                    Ok(var_type)
-                } else {
-                    Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into())
-                }
-            }
+    fn infer_lvalue(&self, lvalue: &Rc<Expression>) -> Result<Rc<Type>, CompileError> {
+        match lvalue.as_ref() {
+            Expression::Identifier(identifier) => match self.scope.lookup(identifier)? {
+                Some(var_type) => Ok(var_type),
+                _ => Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into()),
+            },
             _ => Err(SemanticError::IllegalLValue.into()),
         }
     }
 
     fn infer_assignment(
         &self,
-        sub_type: &mut Type,
-        lvalue: &Expression,
-        expression: &mut Expression,
-    ) -> Result<Type, CompileError> {
-        let lvalue_type = self.infer_lvalue(lvalue)?;
-        let expression_type = self.infer_expression(expression)?;
+        lvalue: Rc<Expression>,
+        expression: &Rc<Expression>,
+    ) -> Result<Rc<Expression>, CompileError> {
+        let lvalue_type = self.infer_lvalue(&lvalue)?;
+        let (expression, expression_type) = self.infer_expression(expression)?;
+        if *lvalue_type != *expression_type {
+            return Err(TypeError::AssignTypeMismatch {
+                lvalue_type,
+                expression_type,
+            }
+            .into());
+        }
+        Ok(Expression::Binary(Binary::Assign, lvalue_type, lvalue, expression).into())
+    }
+
+    fn infer_expression(
+        &self,
+        expression: &Rc<Expression>,
+    ) -> Result<(Rc<Expression>, Rc<Type>), CompileError> {
+        let result: (Rc<Expression>, Rc<Type>) = match expression.as_ref() {
+            Expression::Identifier(identifier) => {
+                let id_type = self.scope.lookup(identifier)?;
+                let Some(id_type) = id_type else {
+                    return Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into());
+                };
+                (Expression::Identifier(identifier.clone()).into(), id_type)
+            }
+            Expression::IntLiteral(value) => {
+                (Expression::IntLiteral(*value).into(), Type::I32.into())
+            }
+            Expression::FloatLiteral(_) => todo!(),
+            Expression::BoolLiteral(value) => {
+                (Expression::BoolLiteral(*value).into(), Type::Bool.into())
+            }
+            Expression::Unary(operator, _, child) => {
+                let (child, result_type) = self.infer_expression(child)?;
+                let child_type =
+                    self.infer_unary_operation_type(&(*operator, result_type.clone()))?;
+                (
+                    Expression::Unary(*operator, child_type, child).into(),
+                    result_type,
+                )
+            }
+            Expression::Binary(operator, _, left, right) => {
+                if *operator == Binary::Assign {
+                    let assignment = self.infer_assignment(left.clone(), right)?;
+                    (assignment, Type::Never.into())
+                } else {
+                    let (left, left_type) = self.infer_expression(left)?;
+                    let (right, right_type) = self.infer_expression(right)?;
+                    let child_type = left_type.clone();
+                    let result_type =
+                        self.infer_binary_operation_type(&(*operator, left_type, right_type))?;
+                    (
+                        Expression::Binary(*operator, child_type, left, right).into(),
+                        result_type,
+                    )
+                }
+            }
+            Expression::Call(function_id, arguments) => {
+                let (arguments, argument_types) = arguments
+                    .iter()
+                    .map(|x| self.infer_expression(x))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                let arguments: Array<Rc<Expression>> = arguments.into();
+                let argument_types: Array<Rc<Type>> = argument_types.into();
+                let Some(function_type) = self.scope.lookup(function_id)? else {
+                    return Err(SemanticError::UndeclaredIdentifier(function_id.clone()).into());
+                };
+                let Type::Function {
+                    return_type,
+                    parameter_types,
+                } = function_type.as_ref()
+                else {
+                    return Err(TypeError::ShouldBeFunctionType.into());
+                };
+                let result_type = if argument_types == *parameter_types {
+                    return_type.clone()
+                } else {
+                    return Err(TypeError::CallArgumentTypesMismatch {
+                        function_id: function_id.clone(),
+                        parameter_types: parameter_types.clone(),
+                        argument_types,
+                    }
+                    .into());
+                };
+                (
+                    Expression::Call(function_id.clone(), arguments).into(),
+                    result_type,
+                )
+            }
+        };
+        Ok(result)
+    }
+
+    fn infer_return_statement(
+        &self,
+        return_value: Option<Rc<Expression>>,
+    ) -> Result<Option<Rc<Expression>>, CompileError> {
+        let (return_value, return_type) = match return_value {
+            Some(return_value) => {
+                let (return_value, return_type) = self.infer_expression(&return_value)?;
+                (Some(return_value), return_type)
+            }
+            None => (None, Type::Never.into()),
+        };
+        let function_name = self.scope.current_function()?;
+        let function_type = self.scope.lookup(&function_name)?.unwrap();
+        let Type::Function {
+            return_type: expected_type,
+            parameter_types: _,
+        } = function_type.as_ref()
+        else {
+            return Err(TypeError::ShouldBeFunctionType.into());
+        };
+        if return_type == *expected_type {
+            Ok(return_value)
+        } else {
+            Err(TypeError::ReturnTypeMismatch {
+                expected: expected_type.clone(),
+                returned: return_type,
+            }
+            .into())
+        }
+    }
+
+    fn infer_if_statement(
+        &mut self,
+        context: &Context,
+        IfDetail {
+            condition,
+            true_body,
+            false_body,
+        }: &IfDetail,
+    ) -> Result<Statement, CompileError> {
+        let (condition, condition_type) = self.infer_expression(condition)?;
+        if *condition_type != Type::Bool {
+            return Err(TypeError::ConditionNeedBool.into());
+        }
+        self.scope.enter(Tag::Anonymous);
+        let true_body = self.infer_statement(context, true_body)?;
+        self.scope.leave(Tag::Anonymous)?;
+        let false_body = match false_body {
+            Some(false_body) => {
+                self.scope.enter(Tag::Anonymous);
+                let false_body = self.infer_statement(context, false_body)?;
+                self.scope.leave(Tag::Anonymous)?;
+                Some(false_body)
+            }
+            None => None,
+        };
+        Ok(Statement::If(IfDetail {
+            condition,
+            true_body,
+            false_body,
+        }))
+    }
+
+    fn infer_while_statement(
+        &mut self,
+        context: &Context,
+        WhileDetail(condition, body): &WhileDetail,
+    ) -> Result<Statement, CompileError> {
+        let (condition, condition_type) = self.infer_expression(condition)?;
+        if *condition_type != Type::Bool {
+            return Err(TypeError::ConditionNeedBool.into());
+        }
+        self.scope.enter(Tag::Named("while"));
+        let body = self.infer_statement(context, body)?;
+        self.scope.leave(Tag::Named("while"))?;
+        Ok(Statement::While(WhileDetail(condition, body)))
+    }
+
+    fn infer_let_statement(
+        &mut self,
+        LetDetail(Variable(identifier, lvalue_type, mutability), expression): &LetDetail,
+    ) -> Result<Statement, CompileError> {
+        let (expression, expression_type) = self.infer_expression(expression)?;
+        let lvalue_type = match lvalue_type.as_ref() {
+            Type::Unknown => expression_type.clone(),
+            _ => lvalue_type.clone(),
+        };
         if lvalue_type != expression_type {
             return Err(TypeError::AssignTypeMismatch {
                 lvalue_type,
@@ -83,210 +262,115 @@ impl TypeInferrer {
             }
             .into());
         }
-        *sub_type = lvalue_type;
-        Ok(Type::Never)
-    }
-
-    fn infer_expression(&self, expression: &mut Expression) -> Result<Type, CompileError> {
-        let result_type = match expression {
-            Expression::Identifier(identifier) => {
-                let id_type = self.scope.lookup(identifier)?;
-                let Some(id_type) = id_type else {
-                    return Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into());
-                };
-                id_type
-            }
-            Expression::IntLiteral(_) => Type::I32,
-            Expression::FloatLiteral(_) => todo!(),
-            Expression::BoolLiteral(_) => Type::Bool,
-            Expression::Unary(operator, sub_type, expression) => {
-                *sub_type = self.infer_expression(expression)?;
-                self.infer_unary_operation_type(&(*operator, sub_type.clone()))?
-            }
-            Expression::Binary(operator, sub_type, left, right) => {
-                if *operator == Binary::Assign {
-                    self.infer_assignment(sub_type, left, right)?
-                } else {
-                    let left_type = self.infer_expression(left)?;
-                    let right_type = self.infer_expression(right)?;
-                    *sub_type = left_type.clone();
-                    self.infer_binary_operation_type(&(operator.clone(), left_type, right_type))?
-                }
-            }
-            Expression::Call(function_id, arguments) => {
-                let argument_types = arguments
-                    .iter_mut()
-                    .map(|x| self.infer_expression(x))
-                    .collect::<Result<Vec<Type>, CompileError>>()?;
-                let Some(function_type) = self.scope.lookup(function_id)? else {
-                    return Err(SemanticError::UndeclaredIdentifier(function_id.clone()).into());
-                };
-                let Type::Function {
-                    return_type,
-                    parameter_types,
-                } = function_type
-                else {
-                    return Err(TypeError::ShouldBeFunctionType.into());
-                };
-                if argument_types == parameter_types {
-                    *return_type
-                } else {
-                    return Err(TypeError::CallArgumentTypesMismatch {
-                        function_id: function_id.clone(),
-                        parameter_types,
-                        argument_types,
-                    }
-                    .into());
-                }
-            }
-        };
-        Ok(result_type)
-    }
-
-    fn infer_return_statement(
-        &self,
-        return_value: &mut Option<Expression>,
-    ) -> Result<(), CompileError> {
-        let return_type = return_value
-            .as_mut()
-            .map_or(Ok(Type::Never), |v| self.infer_expression(v))?;
-        let function_name = self.scope.current_function()?;
-        let function_type = self.scope.lookup(&function_name)?.unwrap();
-        let Type::Function {
-            return_type: expected_type,
-            parameter_types: _,
-        } = function_type
-        else {
-            return Err(TypeError::ShouldBeFunctionType.into());
-        };
-        if return_type == *expected_type {
-            Ok(())
+        if self.scope.is_global()? {
+            self.scope
+                .declare(identifier.clone(), lvalue_type.clone())?;
         } else {
-            Err(TypeError::ReturnTypeMismatch {
-                expected: *expected_type,
-                returned: return_type,
-            }
-            .into())
+            self.scope
+                .overwrite(identifier.clone(), lvalue_type.clone())?;
         }
+        Ok(Statement::Let(LetDetail(
+            Variable(identifier.clone(), lvalue_type, *mutability),
+            expression,
+        )))
+    }
+
+    fn infer_define_statement(
+        &mut self,
+        context: &Context,
+        prototype: &Rc<FunctionPrototype>,
+        body: &Rc<Statement>,
+    ) -> Result<Statement, CompileError> {
+        let FunctionPrototype {
+            identifier,
+            parameters,
+            function_type,
+        } = prototype.as_ref();
+        self.scope.enter(Tag::Function(identifier.clone()));
+        let Type::Function {
+            return_type,
+            parameter_types,
+        } = function_type.as_ref()
+        else {
+            return sys_error!("must be a function type.");
+        };
+        parameters
+            .iter()
+            .map(Rc::as_ref)
+            .zip(parameter_types.iter())
+            .try_for_each(|(Parameter(identifier), parameter_type)| {
+                self.scope
+                    .declare(identifier.clone(), parameter_type.clone())
+            })?;
+        let body = self.infer_statement(context, body)?;
+        self.scope.leave(Tag::Function(identifier.clone()))?;
+        Ok(Statement::Define(DefineDetail {
+            prototype: FunctionPrototype {
+                identifier: identifier.clone(),
+                parameters: parameters.clone(),
+                function_type: Type::Function {
+                    return_type: return_type.clone(),
+                    parameter_types: parameter_types.clone(),
+                }
+                .into(),
+            }
+            .into(),
+            builtin: false,
+            body,
+        }))
     }
 
     fn infer_statement(
         &mut self,
-        id_map: &HashMap<DocumentPath, DocumentId>,
-        type_map: &HashMap<DocumentId, HashMap<Identifier, Type>>,
-        statement: &mut Statement,
-    ) -> Result<(), CompileError> {
-        match statement {
-            Statement::Empty => Ok(()),
+        context: &Context,
+        statement: &Rc<Statement>,
+    ) -> Result<Rc<Statement>, CompileError> {
+        let result = match statement.as_ref() {
+            Statement::Empty => Statement::Empty,
             Statement::Block(statements) => {
                 self.scope.enter(Tag::Anonymous);
-                statements
-                    .iter_mut()
-                    .try_for_each(|statement| self.infer_statement(id_map, type_map, statement))?;
+                let statements = statements
+                    .iter()
+                    .map(|statement| self.infer_statement(context, statement))
+                    .collect::<Result<Rc<_>, _>>()?;
                 self.scope.leave(Tag::Anonymous)?;
-                Ok(())
+                Statement::Block(statements)
             }
-            Statement::Return(return_value) => self.infer_return_statement(return_value),
+            Statement::Return(return_value) => {
+                Statement::Return(self.infer_return_statement(return_value.clone())?)
+            }
             Statement::Expression(expression) => {
-                self.infer_expression(expression)?;
-                Ok(())
+                let (expression, _) = self.infer_expression(expression)?;
+                Statement::Expression(expression)
             }
-            Statement::If(IfDetail {
-                condition,
-                true_body,
-                false_body,
-            }) => {
-                if self.infer_expression(condition)? != Type::Bool {
-                    return Err(TypeError::ConditionNeedBool.into());
-                }
-                self.scope.enter(Tag::Anonymous);
-                self.infer_statement(id_map, type_map, true_body)?;
-                self.scope.leave(Tag::Anonymous)?;
-
-                if let Some(false_body) = false_body {
-                    self.scope.enter(Tag::Anonymous);
-                    self.infer_statement(id_map, type_map, false_body)?;
-                    self.scope.leave(Tag::Anonymous)?;
-                }
-                Ok(())
-            }
-            Statement::While(WhileDetail(condition, body)) => {
-                if self.infer_expression(condition)? != Type::Bool {
-                    return Err(TypeError::ConditionNeedBool.into());
-                }
-                self.scope.enter(Tag::Named("while"));
-                self.infer_statement(id_map, type_map, body)?;
-                self.scope.leave(Tag::Named("while"))?;
-                Ok(())
-            }
-            Statement::Let(LetDetail(Variable(identifier, lvalue_type, _), expression)) => {
-                let expression_type = self.infer_expression(expression)?;
-
-                if *lvalue_type == Type::Unknown {
-                    *lvalue_type = expression_type.clone();
-                }
-
-                let lvalue_type = lvalue_type.clone();
-                if lvalue_type == expression_type {
-                    if self.scope.is_global()? {
-                        self.scope
-                            .declare(identifier.clone(), lvalue_type.clone())?;
-                    } else {
-                        self.scope
-                            .overwrite(identifier.clone(), lvalue_type.clone())?;
-                    }
-                    Ok(())
-                } else {
-                    Err(TypeError::AssignTypeMismatch {
-                        lvalue_type,
-                        expression_type,
-                    }
-                    .into())
-                }
-            }
+            Statement::If(if_detail) => self.infer_if_statement(context, if_detail)?,
+            Statement::While(while_detail) => self.infer_while_statement(context, while_detail)?,
+            Statement::Let(let_detail) => self.infer_let_statement(let_detail)?,
             Statement::Define(DefineDetail {
-                prototype:
-                    FunctionPrototype {
-                        identifier,
-                        parameters,
-                        function_type,
-                    },
-                builtin,
+                prototype,
+                builtin: true,
                 body,
-            }) => {
-                if *builtin {
-                    return Ok(());
-                }
-                self.scope.enter(Tag::Function(identifier.clone()));
-
-                let Type::Function {
-                    return_type: _,
-                    parameter_types,
-                } = function_type
-                else {
-                    return Err(system_error!("must be a function type."));
-                };
-                parameters.iter().zip(parameter_types).try_for_each(
-                    |(Parameter(identifier), parameter_type)| {
-                        self.scope
-                            .declare(identifier.clone(), parameter_type.clone())
-                    },
-                )?;
-
-                self.infer_statement(id_map, type_map, body)?;
-
-                self.scope.leave(Tag::Function(identifier.clone()))?;
-                Ok(())
-            }
+            }) => Statement::Define(DefineDetail {
+                prototype: prototype.clone(),
+                builtin: true,
+                body: body.clone(),
+            }),
+            Statement::Define(DefineDetail {
+                prototype,
+                builtin: false,
+                body,
+            }) => self.infer_define_statement(context, prototype, body)?,
             Statement::Using(UsingPath(document_path, symbol)) => {
-                let used_document_id = id_map.get(document_path).unwrap();
-                let Some(symbol_type) = type_map.get(used_document_id).unwrap().get(symbol) else {
-                    return Err(system_error!("used symbol must exist"));
+                let used_document_id = context.id_map.get(document_path).unwrap();
+                let type_map = context.type_map.get(used_document_id).unwrap();
+                let Some(symbol_type) = type_map.get(symbol) else {
+                    return sys_error!("used symbol must exist");
                 };
                 self.scope.declare(symbol.clone(), symbol_type.clone())?;
-                Ok(())
+                Statement::Using(UsingPath(document_path.clone(), symbol.clone()))
             }
-        }
+        };
+        Ok(result.into())
     }
 
     fn pre_scan_function_prototype(
@@ -306,7 +390,7 @@ impl TypeInferrer {
         document
             .statements
             .iter()
-            .try_for_each(|statement| match statement {
+            .try_for_each(|statement| match statement.as_ref() {
                 Statement::Empty
                 | Statement::Block(_)
                 | Statement::Return(_)
@@ -327,8 +411,10 @@ impl TypeInferrer {
             Binary::Multiply,
             Binary::Divide,
         ] {
-            self.binary_operation_type_map
-                .insert((operator, Type::I32, Type::I32), Type::I32);
+            self.binary_operation_type_map.insert(
+                (operator, Type::I32.into(), Type::I32.into()),
+                Type::I32.into(),
+            );
         }
 
         for operator in [
@@ -339,36 +425,51 @@ impl TypeInferrer {
             Binary::GreaterThan,
             Binary::GreaterThanEqual,
         ] {
-            self.binary_operation_type_map
-                .insert((operator, Type::I32, Type::I32), Type::Bool);
+            self.binary_operation_type_map.insert(
+                (operator, Type::I32.into(), Type::I32.into()),
+                Type::Bool.into(),
+            );
         }
 
         for operator in [Binary::LogicalAnd, Binary::LogicalOr] {
-            self.binary_operation_type_map
-                .insert((operator, Type::Bool, Type::Bool), Type::Bool);
+            self.binary_operation_type_map.insert(
+                (operator, Type::Bool.into(), Type::Bool.into()),
+                Type::Bool.into(),
+            );
         }
     }
 
     fn init_unary_operator_type_map(&mut self) {
         self.unary_operation_type_map
-            .insert((Unary::BitNot, Type::I32), Type::I32);
+            .insert((Unary::BitNot, Type::I32.into()), Type::I32.into());
         self.unary_operation_type_map
-            .insert((Unary::LogicalNot, Type::Bool), Type::Bool);
+            .insert((Unary::LogicalNot, Type::Bool.into()), Type::Bool.into());
         self.unary_operation_type_map
-            .insert((Unary::Negative, Type::I32), Type::I32);
+            .insert((Unary::Negative, Type::I32.into()), Type::I32.into());
     }
 
     /// # Errors
     pub fn infer(&mut self, context: &mut Context, id: DocumentId) -> Result<(), CompileError> {
-        let document = context.document_map.get_mut(&id).unwrap();
+        let Some(document) = context.document_map.remove(&id) else {
+            return sys_error!("document must exist");
+        };
         self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();
         self.scope.enter(Tag::Global);
-        self.pre_scan_global_items(document)?;
-        document.statements.iter_mut().try_for_each(|statement| {
-            self.infer_statement(&context.id_map, &context.type_map, statement)
-        })?;
+        self.pre_scan_global_items(&document)?;
+        let statements = document
+            .statements
+            .iter()
+            .map(|statement| self.infer_statement(context, statement))
+            .collect::<Result<Rc<_>, _>>()?;
+        context.document_map.insert(id, Document { statements });
         self.scope.leave(Tag::Global)?;
         Ok(())
+    }
+}
+
+impl Default for TypeInferrer {
+    fn default() -> Self {
+        Self::new()
     }
 }

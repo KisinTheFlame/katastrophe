@@ -1,3 +1,3 @@
-pub trait ReportableError {
+pub trait Reportable {
     fn report(&self) -> !;
 }

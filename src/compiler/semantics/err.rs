@@ -1,17 +1,17 @@
+use std::rc::Rc;
+
 use crate::{
-    compiler::{err::InnerCompilerError, syntax::ast::ty::Type},
-    util::reportable_error::ReportableError,
+    compiler::syntax::ast::{crumb::Identifier, ty::Type},
+    util::{common::Array, reportable_error::Reportable},
 };
 
 pub enum SemanticError {
-    UndeclaredIdentifier(String),
+    UndeclaredIdentifier(Rc<Identifier>),
     IllegalLValue,
-    AssigningImmutableVariable(String),
+    AssigningImmutableVariable(Rc<Identifier>),
 }
 
-impl InnerCompilerError for SemanticError {}
-
-impl ReportableError for SemanticError {
+impl Reportable for SemanticError {
     fn report(&self) -> ! {
         match self {
             SemanticError::UndeclaredIdentifier(identifier) => {
@@ -32,27 +32,25 @@ pub enum TypeError {
     ProcessInGlobal,
 
     ReturnTypeMismatch {
-        expected: Type,
-        returned: Type,
+        expected: Rc<Type>,
+        returned: Rc<Type>,
     },
     ConditionNeedBool,
     AssignTypeMismatch {
-        lvalue_type: Type,
-        expression_type: Type,
+        lvalue_type: Rc<Type>,
+        expression_type: Rc<Type>,
     },
     CallArgumentTypesMismatch {
-        function_id: String,
-        parameter_types: Vec<Type>,
-        argument_types: Vec<Type>,
+        function_id: Rc<Identifier>,
+        parameter_types: Array<Rc<Type>>,
+        argument_types: Array<Rc<Type>>,
     },
 
     UndeclaredMainFunction,
     IllegalMainFunctionType,
 }
 
-impl InnerCompilerError for TypeError {}
-
-impl ReportableError for TypeError {
+impl Reportable for TypeError {
     fn report(&self) -> ! {
         match self {
             TypeError::ShouldBeFunctionType => {
@@ -83,13 +81,15 @@ impl ReportableError for TypeError {
             } => {
                 let parameter_types = parameter_types
                     .iter()
+                    .map(Rc::as_ref)
                     .map(Type::to_string)
-                    .collect::<Vec<_>>()
+                    .collect::<Rc<_>>()
                     .join(", ");
                 let argument_types = argument_types
                     .iter()
+                    .map(Rc::as_ref)
                     .map(Type::to_string)
-                    .collect::<Vec<_>>()
+                    .collect::<Rc<_>>()
                     .join(", ");
                 panic!(
                     "arguments of call statement mismatch with parameters.
@@ -100,10 +100,10 @@ impl ReportableError for TypeError {
             }
             TypeError::UndeclaredMainFunction => {
                 panic!("main function not declared in input document.")
-            },
+            }
             TypeError::IllegalMainFunctionType => {
                 panic!("the type of main function must be () -> i32.")
-            },
+            }
         }
     }
 }

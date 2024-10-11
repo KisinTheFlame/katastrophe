@@ -1,9 +1,6 @@
 use crate::{
-    compiler::{
-        err::InnerCompilerError,
-        lexis::token::{Keyword, Symbol, Token},
-    },
-    util::reportable_error::ReportableError,
+    compiler::lexis::token::{Keyword, Symbol, Token},
+    util::reportable_error::Reportable,
 };
 
 pub enum ParseErrorKind {
@@ -22,9 +19,7 @@ pub struct ParseError {
     pub kind: ParseErrorKind,
 }
 
-impl InnerCompilerError for ParseError {}
-
-impl ReportableError for ParseError {
+impl Reportable for ParseError {
     fn report(&self) -> ! {
         let message = match &self.kind {
             ParseErrorKind::MissingIdentifier => "failed to expect an identifier".to_string(),
@@ -41,9 +36,7 @@ impl ReportableError for ParseError {
             ParseErrorKind::UnknownType(unknown_type) => {
                 format!("encountering unknown type: {unknown_type}")
             }
-            ParseErrorKind::UnknownPackage => {
-                format!("unknown package.")
-            },
+            ParseErrorKind::UnknownPackage => "unknown package.".to_string(),
         };
         panic!("{message}")
     }

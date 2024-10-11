@@ -1,12 +1,13 @@
 use std::{
     fmt::{self, Display},
     hash::Hash,
+    rc::Rc,
 };
 
-use crate::compiler::{
+use crate::{compiler::{
     err::CompileError,
     syntax::err::{ParseError, ParseErrorKind},
-};
+}, util::common::Array};
 
 #[derive(Clone)]
 pub enum Type {
@@ -15,19 +16,9 @@ pub enum Type {
     I32,
     Bool,
     Function {
-        return_type: Box<Type>,
-        parameter_types: Vec<Type>,
+        return_type: Rc<Type>,
+        parameter_types: Array<Rc<Type>>,
     },
-}
-
-impl Type {
-    fn format_parameter_types(parameter_types: &[Type]) -> String {
-        parameter_types
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
 }
 
 impl Eq for Type {}
@@ -79,7 +70,11 @@ impl Display for Type {
                 return_type,
                 parameter_types,
             } => {
-                let parameter_types = Type::format_parameter_types(parameter_types);
+                let parameter_types = parameter_types
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 write!(f, "({parameter_types}) -> {return_type}")?;
             }
         };

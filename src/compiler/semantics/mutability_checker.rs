@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     compiler::{
         context::{Context, DocumentId},
@@ -11,7 +13,7 @@ use crate::{
             statement::{DefineDetail, LetDetail, Statement, WhileDetail},
         },
     },
-    system_error,
+    sys_error,
 };
 
 use super::err::SemanticError;
@@ -36,7 +38,9 @@ impl MutabilityChecker {
         context: &Context,
         document_id: DocumentId,
     ) -> Result<(), CompileError> {
-        let document = context.document_map.get(&document_id).unwrap();
+        let Some(document) = context.document_map.get(&document_id) else {
+            return sys_error!("document must exist");
+        };
         self.scope.enter(Tag::Global);
         document
             .statements
@@ -57,23 +61,27 @@ impl MutabilityChecker {
                 .iter()
                 .try_for_each(|statement| self.check_statement(context, statement)),
             Statement::Define(DefineDetail {
-                prototype:
-                    FunctionPrototype {
-                        identifier,
-                        parameters,
-                        function_type: _,
-                    },
+                prototype,
                 builtin,
                 body,
             }) => {
+                let FunctionPrototype {
+                    identifier,
+                    parameters,
+                    function_type: _,
+                } = prototype.as_ref();
+
                 if *builtin {
                     return Ok(());
                 }
                 self.scope.enter(Tag::Function(identifier.clone()));
-                parameters.iter().try_for_each(|Parameter(identifier)| {
-                    self.scope
-                        .declare(identifier.clone(), Mutability::Immutable)
-                })?;
+                parameters
+                    .iter()
+                    .map(Rc::as_ref)
+                    .try_for_each(|Parameter(parameter_id)| {
+                        self.scope
+                            .declare(parameter_id.clone(), Mutability::Immutable)
+                    })?;
                 self.check_statement(context, body)?;
                 self.scope.leave(Tag::Function(identifier.clone()))?;
                 Ok(())
@@ -104,14 +112,14 @@ impl MutabilityChecker {
                 }
                 Ok(())
             }
-            Statement::Expression(expression) => match expression {
+            Statement::Expression(expression) => match expression.as_ref() {
                 Expression::Binary(Binary::Assign, _, lvalue, _) => self.check_lvalue(lvalue),
                 _ => Ok(()),
             },
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let id = context.id_map.get(document_path).unwrap();
                 let Some(mutability) = context.mutability_map.get(id).unwrap().get(symbol) else {
-                    return Err(system_error!("used symbol must exist"));
+                    return sys_error!("used symbol must exist");
                 };
                 self.scope.declare(symbol.clone(), *mutability)?;
                 Ok(())
@@ -138,5 +146,11 @@ impl MutabilityChecker {
             | Expression::Binary(_, _, _, _)
             | Expression::Call(_, _) => Err(SemanticError::IllegalLValue.into()),
         }
+    }
+}
+
+impl Default for MutabilityChecker {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -3,20 +3,22 @@ use std::iter::Peekable;
 
 use std::path::Path;
 use std::process::Command;
+use std::rc::Rc;
 use std::{env, fs};
 
 use compiler::context::Context;
 use compiler::err::CompileError;
-use compiler::ir::builtin::{generate_builtin, generate_entry};
+use compiler::ir::builtin::{generate_entry, generate_libc_function};
 use compiler::ir::translator::Translator;
 use compiler::semantics::main_function_check::main_function_check;
 use compiler::semantics::mutability_checker::MutabilityChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;
 use compiler::syntax::ast::package::DocumentPath;
 use indoc::formatdoc;
+use util::common::Array;
 
 use crate::compiler::syntax::parser::Parser;
-use crate::util::reportable_error::ReportableError;
+use crate::util::reportable_error::Reportable;
 
 pub mod compiler;
 pub mod util;
@@ -31,7 +33,7 @@ enum CommandError {
     NoInputFile,
 }
 
-impl ReportableError for CommandError {
+impl Reportable for CommandError {
     fn report(&self) -> ! {
         match self {
             CommandError::MissingOutputFile => {
@@ -157,21 +159,17 @@ fn execute() -> Result<(), CompileError> {
         panic!("encountering fatal error when reading file");
     };
 
-    // parse and semantic check
     let mut context = Context::new();
-    let mut parser = Parser::new(DocumentPath(vec![String::from("self")]), code.as_str());
-    let main_document_id = parser.parse_document(&mut context)?;
 
-    let mut ids = context.document_map.keys().map(|x| *x).collect::<Vec<_>>();
-    ids.sort();
+    let main_document_id = syntax_analyze(code.as_str(), &mut context)?;
 
-    let mut type_inferrer = TypeInferrer::new();
-    ids.iter()
-        .try_for_each(|id| type_inferrer.infer(&mut context, *id))?;
+    let mut ids = context.document_map.keys().copied().collect::<Vec<_>>();
+    ids.sort_unstable();
+    let ids = Rc::<[u32]>::from(ids);
 
-    let mut mutability_checker: MutabilityChecker = MutabilityChecker::new();
-    ids.iter()
-        .try_for_each(|id| mutability_checker.check_document(&context, *id))?;
+    type_infer(&ids, &mut context)?;
+
+    mutability_check(&ids, &context)?;
 
     main_function_check(&context, main_document_id)?;
 
@@ -189,52 +187,15 @@ fn execute() -> Result<(), CompileError> {
                     {ast}
                 "}
             })
-            .collect::<Vec<_>>()
+            .collect::<Rc<_>>()
             .join("\n");
         fs::write(output_path, output).expect("failed to write ast.");
         return Ok(());
     }
 
-    // translate
-    let mut id_translators = ids
-        .iter()
-        .map(|id| {
-            let translator = Translator::new(context.path_map.get(id).unwrap().clone());
-            (*id, translator)
-        })
-        .collect::<Vec<_>>();
-    id_translators
-        .iter_mut()
-        .try_for_each(|(id, translator)| translator.pre_scan_global(&mut context, *id))?;
-    id_translators
-        .iter_mut()
-        .try_for_each(|(id, translator)| translator.translate(&mut context, *id))?;
+    ir_translate(&ids, &mut context)?;
 
-    let ir = ids
-        .iter()
-        .map(|id| {
-            let document_path = context.path_map.get(id).unwrap();
-            let ir = context.instruction.get(id).unwrap();
-            formatdoc! {"
-                ; ----- {document_path} -----
-                {ir}
-            "}
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let builtin_ir = generate_builtin()?;
-    let (main_value, _) = context
-        .ir_model_map
-        .get(&main_document_id)
-        .unwrap()
-        .get(&String::from("main"))
-        .unwrap();
-    let entry_ir = generate_entry(main_value.clone())?;
-    let ir_code = formatdoc! {"
-        {builtin_ir}
-        {ir}
-        {entry_ir}
-    "};
+    let ir_code = ir_generate(&ids, &context, main_document_id)?;
 
     if let Some(Target::Ir) = options.target {
         if !output_path.contains('.') {
@@ -244,7 +205,12 @@ fn execute() -> Result<(), CompileError> {
         return Ok(());
     }
 
-    // assemble
+    assemble(ir_code, output_path);
+
+    Ok(())
+}
+
+fn assemble(ir_code: String, output_path: String) {
     let temp_ir_dir = "/tmp/katastrophe";
     if !Path::new(&temp_ir_dir).exists() {
         fs::create_dir(temp_ir_dir).expect("failed to open a temp ir file.");
@@ -265,8 +231,77 @@ fn execute() -> Result<(), CompileError> {
         let error = String::from_utf8(link_result.stderr).expect("failed to read stderr.");
         panic!("{error}");
     }
+}
 
+fn ir_generate(
+    ids: &Array<u32>,
+    context: &Context,
+    main_document_id: u32,
+) -> Result<String, CompileError> {
+    let ir = ids
+        .iter()
+        .map(|id| {
+            let document_path = context.path_map.get(id).unwrap();
+            let ir = context.instruction.get(id).unwrap();
+            formatdoc! {"
+                ; ----- {document_path} -----
+                {ir}
+            "}
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let builtin_ir = generate_libc_function()?;
+    let (main_value, _) = context
+        .ir_model_map
+        .get(&main_document_id)
+        .unwrap()
+        .get(&String::from("main"))
+        .unwrap();
+    let entry_ir = generate_entry(main_value.clone())?;
+    let ir_code = formatdoc! {"
+        {builtin_ir}
+        {ir}
+        {entry_ir}
+    "};
+    Ok(ir_code)
+}
+
+fn ir_translate(ids: &Array<u32>, context: &mut Context) -> Result<(), CompileError> {
+    let mut id_translators = ids
+        .iter()
+        .map(|id| {
+            let translator = Translator::new(context.path_map.get(id).unwrap().clone());
+            (*id, translator)
+        })
+        .collect::<Vec<_>>();
+    id_translators
+        .iter_mut()
+        .try_for_each(|(id, translator)| translator.pre_scan_global(context, *id))?;
+    id_translators
+        .iter_mut()
+        .try_for_each(|(id, translator)| translator.translate(context, *id))?;
     Ok(())
+}
+
+fn mutability_check(ids: &Array<u32>, context: &Context) -> Result<(), CompileError> {
+    let mut mutability_checker = MutabilityChecker::new();
+    ids.iter()
+        .try_for_each(|id| mutability_checker.check_document(context, *id))?;
+    Ok(())
+}
+
+fn type_infer(ids: &Array<u32>, context: &mut Context) -> Result<(), CompileError> {
+    let mut type_inferrer = TypeInferrer::new();
+    ids.iter()
+        .try_for_each(|id| type_inferrer.infer(context, *id))?;
+    Ok(())
+}
+
+fn syntax_analyze(code: &str, context: &mut Context) -> Result<u32, CompileError> {
+    let document_path = DocumentPath([Rc::new(String::from("self"))].into()).into();
+    let mut parser = Parser::new(document_path, code);
+    let main_document_id = parser.parse_document(context)?;
+    Ok(main_document_id)
 }
 
 fn main() {

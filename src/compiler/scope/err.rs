@@ -1,18 +1,18 @@
-use crate::{compiler::err::InnerCompilerError, util::reportable_error::ReportableError};
+use std::rc::Rc;
+
+use crate::{compiler::syntax::ast::crumb::Identifier, util::reportable_error::Reportable};
 
 use super::Tag;
 
 pub enum ScopeError {
     NullScope,
     ScopeMismatch { expected: Tag, encountered: Tag },
-    DuplicateIdentifierInSameScope(String),
+    DuplicateIdentifierInSameScope(Rc<Identifier>),
 
     NotInFunction,
 }
 
-impl InnerCompilerError for ScopeError {}
-
-impl ReportableError for ScopeError {
+impl Reportable for ScopeError {
     fn report(&self) -> ! {
         match self {
             ScopeError::NullScope => {

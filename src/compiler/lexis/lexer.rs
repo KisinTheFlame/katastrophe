@@ -1,4 +1,4 @@
-use crate::{compiler::err::CompileError, system_error, util::reportable_error::ReportableError};
+use crate::{compiler::err::CompileError, sys_error};
 
 use super::{
     err::{LexError, LexErrorKind},
@@ -56,9 +56,9 @@ impl Lexer {
                 }
                 _ => Some(self.digest_symbol()?),
             };
-            return Ok(token);
+            Ok(token)
         } else {
-            return Ok(None);
+            Ok(None)
         }
     }
 
@@ -66,14 +66,13 @@ impl Lexer {
         if let Some('#') = self.reader.peek() {
             self.reader.forward();
         } else {
-            return Err(system_error!("must be a #"));
+            return sys_error!("must be a #");
         }
         while let Some(c) = self.reader.peek() {
-            if c != '\n' {
-                self.reader.forward()
-            } else {
+            if c == '\n' {
                 break;
             }
+            self.reader.forward();
         }
         Ok(())
     }
@@ -223,8 +222,7 @@ impl Lexer {
                 } else {
                     return Err(LexError {
                         kind: LexErrorKind::UnexpectedCharacter(':'),
-                    }
-                    .into());
+                    });
                 }
             }
             c => {
