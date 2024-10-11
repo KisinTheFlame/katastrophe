@@ -1,17 +1,18 @@
 use std::fmt::{self, Display};
 
 pub trait Operator {
-    /// (unary) - ! ~ : 14 right
-    /// * / : 13 left
-    /// + - : 12 left
-    /// < > <= >= : 10 left
-    /// == != : 9 left
-    /// & : 8 left
-    /// ^ : 7 left
-    /// | : 6 left
-    /// && : 5 left
-    /// || : 4 left
-    /// (assign) = : 2 right
+    /// precedence and associativity: 
+    /// - (unary) - ! ~ : 14 right
+    /// - * / : 13 left
+    /// - + - : 12 left
+    /// - < > <= >= : 10 left
+    /// - == != : 9 left
+    /// - & : 8 left
+    /// - ^ : 7 left
+    /// - | : 6 left
+    /// - && : 5 left
+    /// - || : 4 left
+    /// - (assign) = : 2 right
     fn precedence(&self) -> u8;
     fn is_left_associative(&self) -> bool;
 }
@@ -48,7 +49,7 @@ impl Display for Unary {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Binary {
     Add,
     Subtract,

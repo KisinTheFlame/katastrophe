@@ -1,18 +1,19 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    rc::Rc,
 };
 
 use self::err::ScopeError;
 
-use super::err::CompileError;
+use super::{err::CompileError, syntax::ast::crumb::Identifier};
 
 mod err;
 
 pub enum Tag {
     Anonymous,
     Named(&'static str),
-    Function(String),
+    Function(Rc<Identifier>),
     Global,
     Builtin,
 }
@@ -83,11 +84,15 @@ impl<T: Clone> Scope<T> {
         Ok(())
     }
 
-    pub fn declare(&mut self, symbol: String, symbol_info: T) -> Result<(), CompileError> {
+    pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
         self.execute_mut(|layer| layer.declare(symbol, symbol_info))
     }
 
-    pub fn overwrite(&mut self, symbol: String, symbol_info: T) -> Result<(), CompileError> {
+    pub fn overwrite(
+        &mut self,
+        symbol: Rc<Identifier>,
+        symbol_info: T,
+    ) -> Result<(), CompileError> {
         self.execute_mut(|layer| {
             layer.overwrite(symbol, symbol_info);
             Ok(())
@@ -128,7 +133,7 @@ impl<T: Clone> Scope<T> {
             })
     }
 
-    pub fn current_function(&self) -> Result<String, CompileError> {
+    pub fn current_function(&self) -> Result<Rc<Identifier>, CompileError> {
         self.current_layer
             .as_ref()
             .map_or(Err(ScopeError::NullScope.into()), |layer| {
@@ -157,7 +162,7 @@ pub type LayerLink<T> = Option<Box<Layer<T>>>;
 
 pub struct Layer<T: Clone> {
     pub tag: Tag,
-    pub symbol_table: HashMap<String, T>,
+    pub symbol_table: HashMap<Rc<Identifier>, T>,
     pub outer: LayerLink<T>,
 }
 
@@ -170,7 +175,7 @@ impl<T: Clone> Layer<T> {
         }
     }
 
-    pub fn declare(&mut self, symbol: String, symbol_info: T) -> Result<(), CompileError> {
+    pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
         if self.symbol_table.contains_key(&symbol) {
             return Err(ScopeError::DuplicateIdentifierInSameScope(symbol.clone()).into());
         }
@@ -178,7 +183,7 @@ impl<T: Clone> Layer<T> {
         Ok(())
     }
 
-    pub fn overwrite(&mut self, symbol: String, symbol_info: T) {
+    pub fn overwrite(&mut self, symbol: Rc<Identifier>, symbol_info: T) {
         self.symbol_table.insert(symbol, symbol_info);
     }
 
@@ -193,7 +198,7 @@ impl<T: Clone> Layer<T> {
         }
     }
 
-    pub fn get_current_function_name(&self) -> Result<String, CompileError> {
+    pub fn get_current_function_name(&self) -> Result<Rc<Identifier>, CompileError> {
         if let Tag::Function(name) = &self.tag {
             return Ok(name.clone());
         }

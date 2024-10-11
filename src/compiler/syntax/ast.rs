@@ -1,8 +1,8 @@
 use core::fmt;
 
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
-use crate::util::pretty_format::PrettyFormat;
+use crate::util::{common::Array, pretty_format::PrettyFormat};
 
 use self::statement::Statement;
 
@@ -14,7 +14,7 @@ pub mod statement;
 pub mod ty;
 
 pub struct Document {
-    pub statements: Vec<Statement>,
+    pub statements: Array<Rc<Statement>>,
 }
 
 impl PrettyFormat for Document {

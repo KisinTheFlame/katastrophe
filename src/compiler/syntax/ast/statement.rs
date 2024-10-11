@@ -1,6 +1,9 @@
-use std::fmt;
+use std::{fmt, rc::Rc};
 
-use crate::util::pretty_format::{indent, PrettyFormat};
+use crate::util::{
+    common::Array,
+    pretty_format::{indent, PrettyFormat},
+};
 
 use super::{
     crumb::{FunctionPrototype, Variable},
@@ -10,26 +13,26 @@ use super::{
 };
 
 pub struct IfDetail {
-    pub condition: Expression,
-    pub true_body: Box<Statement>,
-    pub false_body: Option<Box<Statement>>,
+    pub condition: Rc<Expression>,
+    pub true_body: Rc<Statement>,
+    pub false_body: Option<Rc<Statement>>,
 }
 
-pub struct LetDetail(pub Variable, pub Expression);
+pub struct LetDetail(pub Variable, pub Rc<Expression>);
 
-pub struct WhileDetail(pub Expression, pub Box<Statement>);
+pub struct WhileDetail(pub Rc<Expression>, pub Rc<Statement>);
 
 pub struct DefineDetail {
-    pub prototype: FunctionPrototype,
+    pub prototype: Rc<FunctionPrototype>,
     pub builtin: bool,
-    pub body: Box<Statement>,
+    pub body: Rc<Statement>,
 }
 
 pub enum Statement {
     Empty,
-    Block(Vec<Statement>),
-    Return(Option<Expression>),
-    Expression(Expression),
+    Block(Array<Rc<Statement>>),
+    Return(Option<Rc<Expression>>),
+    Expression(Rc<Expression>),
     If(IfDetail),
     Let(LetDetail),
     While(WhileDetail),
@@ -82,25 +85,26 @@ impl PrettyFormat for Statement {
                 expression.pretty_format(f, indentation_num + 1)?;
             }
             Statement::Define(DefineDetail {
-                prototype:
-                    FunctionPrototype {
-                        identifier,
-                        parameters,
-                        function_type,
-                    },
+                prototype,
                 builtin,
                 body,
             }) => {
+                let FunctionPrototype {
+                    identifier,
+                    parameters,
+                    function_type,
+                } = prototype.as_ref();
+
                 let Type::Function {
                     return_type,
                     parameter_types,
-                } = function_type
+                } = function_type.as_ref()
                 else {
                     panic!("must be a function type");
                 };
                 let parameters = parameters
                     .iter()
-                    .zip(parameter_types)
+                    .zip(parameter_types.iter())
                     .map(|(parameter, param_type)| format!("{parameter} as {param_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");

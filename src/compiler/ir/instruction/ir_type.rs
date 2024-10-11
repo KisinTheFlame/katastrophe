@@ -1,6 +1,9 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+};
 
-use crate::compiler::syntax::ast::ty::Type;
+use crate::{compiler::syntax::ast::ty::Type, util::common::Array};
 
 #[derive(Clone)]
 pub enum IrType {
@@ -8,14 +11,14 @@ pub enum IrType {
     I32,
     Bool,
     Function {
-        return_type: Box<IrType>,
-        parameter_types: Vec<IrType>,
+        return_type: Rc<IrType>,
+        parameter_types: Array<Rc<IrType>>,
     },
 }
 
-impl From<Type> for IrType {
-    fn from(value: Type) -> Self {
-        Self::from(&value)
+impl From<Rc<Type>> for IrType {
+    fn from(value: Rc<Type>) -> Self {
+        value.as_ref().into()
     }
 }
 
@@ -29,8 +32,13 @@ impl From<&Type> for IrType {
                 return_type,
                 parameter_types,
             } => IrType::Function {
-                return_type: Box::new(IrType::from(return_type.as_ref())),
-                parameter_types: parameter_types.iter().map(IrType::from).collect(),
+                return_type: Rc::new(IrType::from(return_type.as_ref())),
+                parameter_types: parameter_types
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(IrType::from)
+                    .map(Rc::new)
+                    .collect(),
             },
             Type::Unknown => unimplemented!(),
         }

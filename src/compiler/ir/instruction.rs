@@ -1,29 +1,34 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+};
 
 use crate::{
     compiler::scope::Scope,
-    util::pretty_format::{indent, PrettyFormat},
+    util::{common::Array, pretty_format::{indent, PrettyFormat}},
 };
 
 use self::ir_type::IrType;
 
 pub mod ir_type;
 
-pub type IrModel = (Value, IrType);
+pub type IrId = String;
+
+pub type IrModel = (Rc<Value>, Rc<IrType>);
 
 pub type IrScope = Scope<IrModel>;
 
 #[derive(Clone)]
 pub enum Value {
     Void,
-    Register(String),
+    Register(IrId),
     ImmediateI32(i32),
     ImmediateBool(bool),
-    StackPointer(String),
-    GlobalPointer(String),
-    Parameter(String),
-    Function(String),
-    Label(String),
+    StackPointer(IrId),
+    GlobalPointer(IrId),
+    Parameter(IrId),
+    Function(IrId),
+    Label(IrId),
 }
 
 impl Display for Value {
@@ -47,8 +52,8 @@ impl Display for Value {
 }
 
 pub struct IrFunctionPrototype {
-    pub function_type: IrType,
-    pub id: Value,
+    pub function_type: Rc<IrType>,
+    pub id: Rc<Value>,
 }
 
 pub enum IrBinaryOpcode {
@@ -105,34 +110,34 @@ impl Display for Comparator {
 pub enum Instruction {
     NoOperation,
     Global {
-        lvalue: Value,
-        data_type: IrType,
-        value: Value,
+        lvalue: Rc<Value>,
+        data_type: Rc<IrType>,
+        value: Rc<Value>,
     },
     Constant {
-        lvalue: Value,
-        data_type: IrType,
-        value: Value,
+        lvalue: Rc<Value>,
+        data_type: Rc<IrType>,
+        value: Rc<Value>,
     },
     ReturnVoid,
     Return {
-        return_type: IrType,
-        value: Value,
+        return_type: Rc<IrType>,
+        value: Rc<Value>,
     },
-    Batch(Vec<Instruction>),
-    Definition(IrFunctionPrototype, Vec<Value>, Box<Instruction>),
+    Batch(Array<Rc<Instruction>>),
+    Definition(IrFunctionPrototype, Array<Rc<Value>>, Rc<Instruction>),
     BuiltinDefinition(String),
     Binary {
         operator: IrBinaryOpcode,
-        data_type: IrType,
-        result: Value,
-        left: Value,
-        right: Value,
+        data_type: Rc<IrType>,
+        result: Rc<Value>,
+        left: Rc<Value>,
+        right: Rc<Value>,
     },
     Copy {
-        data_type: IrType,
-        from: Value,
-        to: Value,
+        data_type: Rc<IrType>,
+        from: Rc<Value>,
+        to: Rc<Value>,
     },
     Bitcast {
         from: IrModel,
@@ -140,26 +145,26 @@ pub enum Instruction {
     },
     Allocate(IrModel),
     Load {
-        data_type: IrType,
-        from: Value,
-        to: Value,
+        data_type: Rc<IrType>,
+        from: Rc<Value>,
+        to: Rc<Value>,
     },
     Store {
-        data_type: IrType,
-        from: Value,
-        to: Value,
+        data_type: Rc<IrType>,
+        from: Rc<Value>,
+        to: Rc<Value>,
     },
     Call {
-        receiver: Option<Value>,
+        receiver: Option<Rc<Value>>,
         function: IrFunctionPrototype,
-        arguments: Vec<Value>,
+        arguments: Array<Rc<Value>>,
     },
-    Label(Value),
-    Jump(Value),
+    Label(Rc<Value>),
+    Jump(Rc<Value>),
     JumpIf {
-        condition: Value,
-        when_true: Value,
-        when_false: Value,
+        condition: Rc<Value>,
+        when_true: Rc<Value>,
+        when_false: Rc<Value>,
     },
     Unreachable,
 }
@@ -174,14 +179,14 @@ impl Instruction {
         let IrType::Function {
             return_type,
             parameter_types,
-        } = function_type
+        } = function_type.as_ref()
         else {
             return Err(fmt::Error);
         };
 
         let parameters = parameter_types
             .iter()
-            .zip(parameters)
+            .zip(parameters.iter())
             .map(|(param_type, param)| format!("{param_type} {param}"))
             .collect::<Vec<_>>()
             .join(", ");
@@ -210,7 +215,7 @@ impl Instruction {
         let IrType::Function {
             return_type,
             parameter_types: parameter_type,
-        } = function_type
+        } = function_type.as_ref()
         else {
             return Err(fmt::Error);
         };

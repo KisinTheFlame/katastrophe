@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, rc::Rc};
 
 use crate::compiler::err::CompileError;
 
@@ -7,40 +7,47 @@ use super::{
     instruction::{ir_type::IrType, Instruction, IrFunctionPrototype, Value},
 };
 
-pub fn generate_builtin() -> Result<Instruction, CompileError> {
-    match fs::read_to_string("static/builtin.ll") {
+/// # Errors
+pub fn generate_libc_function() -> Result<Instruction, CompileError> {
+    match fs::read_to_string("static/libc_declaration.ll") {
         Ok(code) => Ok(Instruction::BuiltinDefinition(code)),
         Err(_) => Err(IrError::BuiltinFileNotExist.into()),
     }
 }
 
-pub fn generate_entry(main_value: Value) -> Result<Instruction, CompileError> {
+/// # Errors
+pub fn generate_entry(main_value: Rc<Value>) -> Result<Rc<Instruction>, CompileError> {
     let template = Instruction::Definition(
         IrFunctionPrototype {
-            function_type: IrType::Function {
-                return_type: Box::new(IrType::I32),
-                parameter_types: Vec::new(),
-            },
-            id: Value::Function("main".to_string()),
+            function_type: Rc::new(IrType::Function {
+                return_type: IrType::I32.into(),
+                parameter_types: [].into(),
+            }),
+            id: Value::Function("main".to_string()).into(),
         },
-        Vec::new(),
-        Box::new(Instruction::Batch(vec![
-            Instruction::Call {
-                receiver: Some(Value::Register("main_return".to_string())),
-                function: IrFunctionPrototype {
-                    function_type: IrType::Function {
-                        return_type: Box::new(IrType::I32),
-                        parameter_types: Vec::new(),
+        [].into(),
+        Rc::new(Instruction::Batch(
+            [
+                Instruction::Call {
+                    receiver: Some(Value::Register("main_return".to_string()).into()),
+                    function: IrFunctionPrototype {
+                        function_type: Rc::new(IrType::Function {
+                            return_type: IrType::I32.into(),
+                            parameter_types: [].into(),
+                        }),
+                        id: main_value,
                     },
-                    id: main_value,
-                },
-                arguments: Vec::new(),
-            },
-            Instruction::Return {
-                return_type: IrType::I32,
-                value: Value::Register("main_return".to_string()),
-            },
-        ])),
+                    arguments: [].into(),
+                }
+                .into(),
+                Instruction::Return {
+                    return_type: IrType::I32.into(),
+                    value: Value::Register("main_return".to_string()).into(),
+                }
+                .into(),
+            ]
+            .into(),
+        )),
     );
-    Ok(template)
+    Ok(template.into())
 }

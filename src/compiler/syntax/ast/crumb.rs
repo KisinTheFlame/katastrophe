@@ -1,10 +1,15 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+};
+
+use crate::util::common::Array;
 
 use super::ty::Type;
 
 pub type Identifier = String;
 
-pub struct Parameter(pub Identifier);
+pub struct Parameter(pub Rc<Identifier>);
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -14,9 +19,9 @@ impl Display for Parameter {
 }
 
 pub struct FunctionPrototype {
-    pub identifier: Identifier,
-    pub parameters: Vec<Parameter>,
-    pub function_type: Type,
+    pub identifier: Rc<Identifier>,
+    pub parameters: Array<Rc<Parameter>>,
+    pub function_type: Rc<Type>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,4 +39,4 @@ impl Display for Mutability {
     }
 }
 
-pub struct Variable(pub Identifier, pub Type, pub Mutability);
+pub struct Variable(pub Rc<Identifier>, pub Rc<Type>, pub Mutability);

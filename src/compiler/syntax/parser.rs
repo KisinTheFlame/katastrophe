@@ -1,14 +1,17 @@
-use std::{collections::HashMap, mem};
+use std::{collections::HashMap, mem, rc::Rc};
 
-use crate::compiler::{
-    context::{next_document_id, Context, DocumentId},
-    err::CompileError,
-    lexis::{
-        lexer::Lexer,
-        token::{Keyword, Symbol, Token},
+use crate::{
+    compiler::{
+        context::{next_document_id, Context, DocumentId},
+        err::CompileError,
+        lexis::{
+            lexer::Lexer,
+            token::{Keyword, Symbol, Token},
+        },
+        scope::{Scope, Tag},
+        syntax::ast::package::load_package_path,
     },
-    scope::{Scope, Tag},
-    syntax::ast::package::load_package_path,
+    util::common::Array,
 };
 
 use super::{
@@ -26,15 +29,17 @@ use super::{
 
 pub struct Parser {
     lexer: Lexer,
-    document_path: DocumentPath,
-    type_map: HashMap<Identifier, Type>,
-    mutability_map: HashMap<Identifier, Mutability>,
+    document_path: Rc<DocumentPath>,
+    type_map: HashMap<Rc<Identifier>, Rc<Type>>,
+    mutability_map: HashMap<Rc<Identifier>, Mutability>,
     scope: Scope<()>,
 }
 
+type TypedParameters = (Array<Rc<Parameter>>, Array<Rc<Type>>);
+
 impl Parser {
     #[must_use]
-    pub fn new(document_path: DocumentPath, code: &str) -> Parser {
+    pub fn new(document_path: Rc<DocumentPath>, code: &str) -> Parser {
         Parser {
             lexer: Lexer::new(code),
             document_path,
@@ -100,21 +105,21 @@ impl Parser {
         }
     }
 
-    fn parse_function_call_args(&mut self) -> Result<Vec<Expression>, CompileError> {
+    fn parse_function_call_args(&mut self) -> Result<Array<Rc<Expression>>, CompileError> {
         self.digest_symbol(Symbol::LeftParentheses)?;
         if self.expect_symbol(Symbol::RightParentheses) {
-            return Ok(Vec::new());
+            return Ok([].into());
         }
-        let mut args = Vec::<Expression>::new();
+        let mut args = Vec::new();
         loop {
             let arg = self.parse_expression()?;
-            args.push(arg);
+            args.push(arg.into());
             if !self.expect_symbol(Symbol::Comma) {
                 break;
             }
         }
         self.digest_symbol(Symbol::RightParentheses)?;
-        Ok(args)
+        Ok(args.into())
     }
 
     fn parse_plain_identifier(&mut self) -> Result<String, CompileError> {
@@ -134,11 +139,11 @@ impl Parser {
         let identifier = self.parse_plain_identifier()?;
         if self.match_symbol(Symbol::LeftParentheses) {
             Ok(Expression::Call(
-                identifier,
+                identifier.into(),
                 self.parse_function_call_args()?,
             ))
         } else {
-            Ok(Expression::Identifier(identifier))
+            Ok(Expression::Identifier(identifier.into()))
         }
     }
 
@@ -173,8 +178,8 @@ impl Parser {
             self.lexer.next();
             Ok(Expression::Unary(
                 operator,
-                Type::Unknown,
-                Box::new(self.parse_primary()?),
+                Type::Unknown.into(),
+                self.parse_primary()?.into(),
             ))
         } else {
             let kind = if let Some(token) = self.lexer.peek() {
@@ -269,18 +274,18 @@ impl Parser {
             if !current_operator.is_left_associative() {
                 return Ok(Expression::Binary(
                     current_operator,
-                    Type::Unknown,
-                    Box::new(lhs),
-                    Box::new(self.parse_binary_expression_rhs(0, rhs)?),
+                    Type::Unknown.into(),
+                    Rc::new(lhs),
+                    Rc::new(self.parse_binary_expression_rhs(0, rhs)?),
                 ));
             }
 
             let Some(next_operator) = self.peek_binary_operator() else {
                 return Ok(Expression::Binary(
                     current_operator,
-                    Type::Unknown,
-                    Box::new(lhs),
-                    Box::new(rhs),
+                    Type::Unknown.into(),
+                    Rc::new(lhs),
+                    Rc::new(rhs),
                 ));
             };
             let need_to_associate_with_right = if next_operator.is_left_associative() {
@@ -296,9 +301,9 @@ impl Parser {
 
             lhs = Expression::Binary(
                 current_operator,
-                Type::Unknown,
-                Box::new(lhs),
-                Box::new(rhs),
+                Type::Unknown.into(),
+                Rc::new(lhs),
+                Rc::new(rhs),
             );
         }
     }
@@ -324,32 +329,32 @@ impl Parser {
     fn parse_expression_statement(&mut self) -> Result<Statement, CompileError> {
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;
-        Ok(Statement::Expression(expression))
+        Ok(Statement::Expression(expression.into()))
     }
 
     fn parse_block_statement(&mut self, context: &mut Context) -> Result<Statement, CompileError> {
-        let mut statements = Vec::<Statement>::new();
+        let mut statements = Vec::new();
         self.digest_symbol(Symbol::LeftBrace)?;
         while !self.expect_symbol(Symbol::RightBrace) {
-            let statement = self.parse_statement(context)?;
+            let statement = self.parse_statement(context)?.into();
             statements.push(statement);
         }
-        Ok(Statement::Block(statements))
+        Ok(Statement::Block(statements.into()))
     }
 
     fn parse_if_statement(&mut self, context: &mut Context) -> Result<IfDetail, CompileError> {
         self.digest_keyword(Keyword::If)?;
-        let condition = self.parse_expression()?;
-        let body = Box::new(self.parse_block_statement(context)?);
-        let else_body = if self.expect_keyword(Keyword::Else) {
-            Some(Box::new(self.parse_block_statement(context)?))
+        let condition = self.parse_expression()?.into();
+        let true_body = self.parse_block_statement(context)?.into();
+        let false_body = if self.expect_keyword(Keyword::Else) {
+            Some(self.parse_block_statement(context)?.into())
         } else {
             None
         };
         Ok(IfDetail {
             condition,
-            true_body: body,
-            false_body: else_body,
+            true_body,
+            false_body,
         })
     }
 
@@ -358,8 +363,8 @@ impl Parser {
         context: &mut Context,
     ) -> Result<WhileDetail, CompileError> {
         self.digest_keyword(Keyword::While)?;
-        let condition = self.parse_expression()?;
-        let body = Box::new(self.parse_block_statement(context)?);
+        let condition = self.parse_expression()?.into();
+        let body = self.parse_block_statement(context)?.into();
         Ok(WhileDetail(condition, body))
     }
 
@@ -367,26 +372,26 @@ impl Parser {
         let identifier = self.parse_plain_identifier()?;
         self.digest_keyword(Keyword::As)?;
         let parameter_type = self.parse_type()?;
-        Ok((Parameter(identifier), parameter_type))
+        Ok((Parameter(identifier.into()), parameter_type))
     }
 
-    fn parse_function_parameters(&mut self) -> Result<(Vec<Parameter>, Vec<Type>), CompileError> {
+    fn parse_function_parameters(&mut self) -> Result<TypedParameters, CompileError> {
         self.digest_symbol(Symbol::LeftParentheses)?;
         if self.expect_symbol(Symbol::RightParentheses) {
-            return Ok((Vec::new(), Vec::new()));
+            return Ok(([].into(), [].into()));
         }
-        let mut parameters = Vec::<Parameter>::new();
-        let mut parameter_types = Vec::<Type>::new();
+        let mut parameters = Vec::new();
+        let mut parameter_types = Vec::new();
         loop {
             let (parameter, parameter_type) = self.parse_function_parameter()?;
-            parameters.push(parameter);
-            parameter_types.push(parameter_type);
+            parameters.push(Rc::new(parameter));
+            parameter_types.push(parameter_type.into());
             if !self.expect_symbol(Symbol::Comma) {
                 break;
             }
         }
         self.digest_symbol(Symbol::RightParentheses)?;
-        Ok((parameters, parameter_types))
+        Ok((parameters.into(), parameter_types.into()))
     }
 
     fn parse_function_type(&mut self) -> Result<Type, CompileError> {
@@ -395,17 +400,17 @@ impl Parser {
             if self.expect_symbol(Symbol::RightParentheses) {
                 break;
             }
-            parameter_types.push(self.parse_type()?);
+            parameter_types.push(self.parse_type()?.into());
             if !self.expect_symbol(Symbol::Comma) {
                 self.digest_symbol(Symbol::RightParentheses)?;
                 break;
             }
         }
         self.digest_symbol(Symbol::Arrow)?;
-        let return_type = Box::new(self.parse_type()?);
+        let return_type = self.parse_type()?.into();
         Ok(Type::Function {
             return_type,
-            parameter_types,
+            parameter_types: parameter_types.into(),
         })
     }
 
@@ -427,7 +432,7 @@ impl Parser {
     }
 
     fn parse_function_prototype(&mut self) -> Result<FunctionPrototype, CompileError> {
-        let identifier = self.parse_plain_identifier()?;
+        let identifier = self.parse_plain_identifier()?.into();
         let (parameters, parameter_types) = self.parse_function_parameters()?;
         let return_type = self.parse_function_return_type()?.into();
         Ok(FunctionPrototype {
@@ -436,7 +441,8 @@ impl Parser {
             function_type: Type::Function {
                 return_type,
                 parameter_types,
-            },
+            }
+            .into(),
         })
     }
 
@@ -455,10 +461,10 @@ impl Parser {
                 .insert(identifier.clone(), Mutability::Immutable);
         }
         self.scope.enter(Tag::Function(identifier.clone()));
-        let body = Box::new(self.parse_block_statement(context)?);
+        let body = self.parse_block_statement(context)?.into();
         self.scope.leave(Tag::Function(identifier.clone()))?;
         Ok(DefineDetail {
-            prototype,
+            prototype: prototype.into(),
             builtin,
             body,
         })
@@ -471,12 +477,13 @@ impl Parser {
         } else {
             Mutability::Immutable
         };
-        let lvalue = self.parse_plain_identifier()?;
+        let lvalue = Rc::new(self.parse_plain_identifier()?);
         let lvalue_type = if self.expect_keyword(Keyword::As) {
             self.parse_type()?
         } else {
             Type::Unknown
         };
+        let lvalue_type = Rc::new(lvalue_type);
         self.digest_symbol(Symbol::Assign)?;
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;
@@ -486,7 +493,7 @@ impl Parser {
         }
         Ok(LetDetail(
             Variable(lvalue, lvalue_type, mutability),
-            expression,
+            expression.into(),
         ))
     }
 
@@ -497,7 +504,7 @@ impl Parser {
         }
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;
-        Ok(Statement::Return(Some(expression)))
+        Ok(Statement::Return(Some(expression.into())))
     }
 
     fn parse_using_statement(&mut self, context: &mut Context) -> Result<Statement, CompileError> {
@@ -514,10 +521,10 @@ impl Parser {
             }
             .into());
         };
-        let path_nodes = path_nodes.iter().cloned().collect::<Vec<_>>();
-        let document_path = DocumentPath(path_nodes);
-        load_package_path(context, &document_path)?;
-        let using_path = UsingPath(document_path, item.clone());
+        let path_nodes = path_nodes.iter().cloned().map(Rc::new).collect();
+        let document_path = Rc::new(DocumentPath(path_nodes));
+        load_package_path(context, document_path.clone())?;
+        let using_path = UsingPath(document_path, item.clone().into());
         Ok(Statement::Using(using_path))
     }
 
@@ -555,20 +562,20 @@ impl Parser {
         context.path_map.insert(id, self.document_path.clone());
 
         self.scope.enter(Tag::Global);
-        let mut statements = Vec::<Statement>::new();
+        let mut statements = Vec::new();
         while self.lexer.peek().is_some() {
-            statements.push(self.parse_statement(context)?);
+            statements.push(self.parse_statement(context)?.into());
         }
         self.scope.leave(Tag::Global)?;
 
-        let document = Document { statements };
+        let document = Document {
+            statements: statements.into(),
+        };
         context.document_map.insert(id, document);
-        context
-            .type_map
-            .insert(id, mem::replace(&mut self.type_map, HashMap::new()));
+        context.type_map.insert(id, mem::take(&mut self.type_map));
         context
             .mutability_map
-            .insert(id, mem::replace(&mut self.mutability_map, HashMap::new()));
+            .insert(id, mem::take(&mut self.mutability_map));
         Ok(id)
     }
 }
