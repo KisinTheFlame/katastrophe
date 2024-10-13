@@ -1,21 +1,15 @@
-use std::{
-    fmt::{self, Display},
-    fs,
-    rc::Rc,
-};
+use std::fmt::Display;
+use std::fmt::{self};
+use std::fs;
+use std::rc::Rc;
 
-use crate::{
-    compiler::{
-        context::Context,
-        err::CompileError,
-        ir::instruction::Value,
-        syntax::{
-            err::{ParseError, ParseErrorKind},
-            parser::Parser,
-        },
-    },
-    util::common::Array,
-};
+use crate::compiler::context::Context;
+use crate::compiler::err::CompileError;
+use crate::compiler::ir::instruction::Value;
+use crate::compiler::syntax::err::ParseError;
+use crate::compiler::syntax::err::ParseErrorKind;
+use crate::compiler::syntax::parser::Parser;
+use crate::util::common::Array;
 
 use super::crumb::Identifier;
 

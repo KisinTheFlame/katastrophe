@@ -1,11 +1,14 @@
-use std::{fs, rc::Rc};
+use std::fs;
+use std::rc::Rc;
 
+use crate::compiler::bit_width::BitWidth;
 use crate::compiler::err::CompileError;
 
-use super::{
-    err::IrError,
-    instruction::{ir_type::IrType, Instruction, IrFunctionPrototype, Value},
-};
+use super::err::IrError;
+use super::instruction::ir_type::IrType;
+use super::instruction::Instruction;
+use super::instruction::IrFunctionPrototype;
+use super::instruction::Value;
 
 /// # Errors
 pub fn generate_libc_function() -> Result<Instruction, CompileError> {
@@ -20,7 +23,7 @@ pub fn generate_entry(main_value: Rc<Value>) -> Result<Rc<Instruction>, CompileE
     let template = Instruction::Definition(
         IrFunctionPrototype {
             function_type: Rc::new(IrType::Function {
-                return_type: IrType::I32.into(),
+                return_type: IrType::Int(BitWidth::Bit32).into(),
                 parameter_types: [].into(),
             }),
             id: Value::Function("main".to_string()).into(),
@@ -32,7 +35,7 @@ pub fn generate_entry(main_value: Rc<Value>) -> Result<Rc<Instruction>, CompileE
                     receiver: Some(Value::Register("main_return".to_string()).into()),
                     function: IrFunctionPrototype {
                         function_type: Rc::new(IrType::Function {
-                            return_type: IrType::I32.into(),
+                            return_type: IrType::Int(BitWidth::Bit32).into(),
                             parameter_types: [].into(),
                         }),
                         id: main_value,
@@ -41,7 +44,7 @@ pub fn generate_entry(main_value: Rc<Value>) -> Result<Rc<Instruction>, CompileE
                 }
                 .into(),
                 Instruction::Return {
-                    return_type: IrType::I32.into(),
+                    return_type: IrType::Int(BitWidth::Bit32).into(),
                     value: Value::Register("main_return".to_string()).into(),
                 }
                 .into(),

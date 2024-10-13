@@ -1,20 +1,22 @@
 use std::rc::Rc;
 
-use crate::{
-    compiler::{
-        context::{Context, DocumentId},
-        err::CompileError,
-        scope::{Scope, Tag},
-        syntax::ast::{
-            crumb::{FunctionPrototype, Mutability, Parameter, Variable},
-            expression::Expression,
-            operator::Binary,
-            package::UsingPath,
-            statement::{DefineDetail, LetDetail, Statement, WhileDetail},
-        },
-    },
-    sys_error,
-};
+use crate::compiler::context::Context;
+use crate::compiler::context::DocumentId;
+use crate::compiler::err::CompileError;
+use crate::compiler::scope::Scope;
+use crate::compiler::scope::Tag;
+use crate::compiler::syntax::ast::crumb::FunctionPrototype;
+use crate::compiler::syntax::ast::crumb::Mutability;
+use crate::compiler::syntax::ast::crumb::Parameter;
+use crate::compiler::syntax::ast::crumb::Variable;
+use crate::compiler::syntax::ast::expression::Expression;
+use crate::compiler::syntax::ast::operator::Binary;
+use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::statement::DefineDetail;
+use crate::compiler::syntax::ast::statement::LetDetail;
+use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::WhileDetail;
+use crate::sys_error;
 
 use super::err::SemanticError;
 
@@ -140,11 +142,13 @@ impl MutabilityChecker {
                 }
             }
             Expression::IntLiteral(_)
+            | Expression::CharLiteral(_)
             | Expression::FloatLiteral(_)
             | Expression::BoolLiteral(_)
             | Expression::Unary(_, _, _)
             | Expression::Binary(_, _, _, _)
-            | Expression::Call(_, _) => Err(SemanticError::IllegalLValue.into()),
+            | Expression::Call(_, _)
+            | Expression::Cast(_, _, _) => Err(SemanticError::IllegalLValue.into()),
         }
     }
 }

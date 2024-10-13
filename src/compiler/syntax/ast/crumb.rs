@@ -1,7 +1,6 @@
-use std::{
-    fmt::{self, Display},
-    rc::Rc,
-};
+use std::fmt::Display;
+use std::fmt::{self};
+use std::rc::Rc;
 
 use crate::util::common::Array;
 
@@ -9,6 +8,7 @@ use super::ty::Type;
 
 pub type Identifier = String;
 
+#[derive(Clone)]
 pub struct Parameter(pub Rc<Identifier>);
 
 impl Display for Parameter {

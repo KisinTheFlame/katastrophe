@@ -58,6 +58,9 @@ pub enum Symbol {
     BitOr,
     BitNot,
 
+    LeftShift,
+    RightShift,
+
     Equal,
     NotEqual,
     LessThan,
@@ -86,6 +89,7 @@ pub enum Token {
     Identifier(String),
     IntLiteral(i32),
     FloatLiteral(f64),
+    CharLiteral(char),
     BoolLiteral(bool),
 
     Keyword(Keyword),

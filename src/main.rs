@@ -1,19 +1,20 @@
-use std::{
-    env::{self, Args},
-    fs,
-    iter::Peekable,
-    rc::Rc,
-};
+use std::env::Args;
+use std::env::{self};
+use std::fs;
+use std::iter::Peekable;
+use std::rc::Rc;
 
 use indoc::formatdoc;
-use katastrophe::{
-    assemble,
-    compiler::{
-        context::Context, err::CompileError, semantics::main_function_checker::main_function_check,
-    },
-    ir_generate, ir_translate, mutability_check, syntax_analyze, type_infer,
-    util::reportable_error::Reportable,
-};
+use katastrophe::assemble;
+use katastrophe::compiler::context::Context;
+use katastrophe::compiler::err::CompileError;
+use katastrophe::compiler::semantics::main_function_checker::main_function_check;
+use katastrophe::ir_generate;
+use katastrophe::ir_translate;
+use katastrophe::mutability_check;
+use katastrophe::syntax_analyze;
+use katastrophe::type_infer;
+use katastrophe::util::reportable_error::Reportable;
 
 enum CommandError {
     MissingOutputFile,

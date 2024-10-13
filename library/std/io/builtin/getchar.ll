@@ -1,4 +1,5 @@
-define i32 {value}() {
+define i8 {value}() {
     %c = call i32 @getchar()
-    ret i32 %c
+    %c.trunc = trunc i32 %c to i8
+    ret i8 %c.trunc
 }

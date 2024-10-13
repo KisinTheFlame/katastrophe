@@ -1,16 +1,15 @@
-use std::{fmt, rc::Rc};
+use std::fmt;
+use std::rc::Rc;
 
-use crate::util::{
-    common::Array,
-    pretty_format::{indent, PrettyFormat},
-};
+use crate::util::common::Array;
+use crate::util::pretty_format::indent;
+use crate::util::pretty_format::PrettyFormat;
 
-use super::{
-    crumb::{FunctionPrototype, Variable},
-    expression::Expression,
-    package::UsingPath,
-    ty::Type,
-};
+use super::crumb::FunctionPrototype;
+use super::crumb::Variable;
+use super::expression::Expression;
+use super::package::UsingPath;
+use super::ty::Type;
 
 pub struct IfDetail {
     pub condition: Rc<Expression>,

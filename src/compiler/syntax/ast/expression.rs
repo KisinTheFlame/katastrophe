@@ -1,21 +1,23 @@
-use std::fmt::{self, Display};
+use std::fmt::Display;
+use std::fmt::{self};
 use std::rc::Rc;
 
 use crate::util::common::Array;
-use crate::util::pretty_format::{indent, PrettyFormat};
+use crate::util::pretty_format::indent;
+use crate::util::pretty_format::PrettyFormat;
 
 use crate::compiler::syntax::ast::ty::Type;
 
-use super::{
-    crumb::Identifier,
-    operator::{Binary, Unary},
-};
+use super::crumb::Identifier;
+use super::operator::Binary;
+use super::operator::Unary;
 
 #[derive(Clone)]
 pub enum Expression {
     Identifier(Rc<Identifier>),
 
     IntLiteral(i32),
+    CharLiteral(char),
     FloatLiteral(f64),
     BoolLiteral(bool),
 
@@ -23,6 +25,8 @@ pub enum Expression {
     Binary(Binary, Rc<Type>, Rc<Expression>, Rc<Expression>),
 
     Call(Rc<Identifier>, Array<Rc<Expression>>),
+
+    Cast(Rc<Expression>, Rc<Type>, Rc<Type>),
 }
 
 impl PrettyFormat for Expression {
@@ -34,6 +38,9 @@ impl PrettyFormat for Expression {
             }
             Expression::IntLiteral(literal) => {
                 writeln!(f, "{indentation}{literal}")?;
+            }
+            Expression::CharLiteral(literal) => {
+                writeln!(f, "{indentation}'{literal}'")?;
             }
             Expression::FloatLiteral(literal) => {
                 writeln!(f, "{indentation}{literal}")?;
@@ -54,7 +61,11 @@ impl PrettyFormat for Expression {
                 writeln!(f, "{indentation}Call {callee}")?;
                 arguments
                     .iter()
-                    .try_for_each(|arg| arg.pretty_format(f, indentation_num))?;
+                    .try_for_each(|arg| arg.pretty_format(f, indentation_num + 1))?;
+            }
+            Expression::Cast(expression, from_type, to_type) => {
+                writeln!(f, "{indentation}As from {from_type} to {to_type}")?;
+                expression.pretty_format(f, indentation_num + 1)?;
             }
         }
         Ok(())

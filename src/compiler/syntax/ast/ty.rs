@@ -1,19 +1,19 @@
-use std::{
-    fmt::{self, Display},
-    hash::Hash,
-    rc::Rc,
-};
+use std::fmt::Display;
+use std::fmt::{self};
+use std::hash::Hash;
+use std::rc::Rc;
 
-use crate::{compiler::{
-    err::CompileError,
-    syntax::err::{ParseError, ParseErrorKind},
-}, util::common::Array};
+use crate::compiler::bit_width::BitWidth;
+use crate::compiler::err::CompileError;
+use crate::compiler::syntax::err::ParseError;
+use crate::compiler::syntax::err::ParseErrorKind;
+use crate::util::common::Array;
 
 #[derive(Clone)]
 pub enum Type {
     Unknown,
     Never,
-    I32,
+    Int(BitWidth),
     Bool,
     Function {
         return_type: Rc<Type>,
@@ -28,8 +28,8 @@ impl PartialEq for Type {
         match (self, other) {
             (Type::Unknown, Type::Unknown)
             | (Type::Never, Type::Never)
-            | (Type::I32, Type::I32)
             | (Type::Bool, Type::Bool) => true,
+            (Type::Int(w1), Type::Int(w2)) => w1 == w2,
             (
                 Type::Function {
                     return_type: r1,
@@ -60,8 +60,8 @@ impl Display for Type {
             Type::Never => {
                 write!(f, "void")?;
             }
-            Type::I32 => {
-                write!(f, "i32")?;
+            Type::Int(bit_width) => {
+                write!(f, "i{bit_width}")?;
             }
             Type::Bool => {
                 write!(f, "bool")?;
@@ -88,7 +88,8 @@ impl TryFrom<String> for Type {
     fn try_from(value: String) -> Result<Type, CompileError> {
         match value.as_str() {
             "void" => Ok(Type::Never),
-            "i32" => Ok(Type::I32),
+            "i32" => Ok(Type::Int(BitWidth::Bit32)),
+            "i8" => Ok(Type::Int(BitWidth::Bit8)),
             "bool" => Ok(Type::Bool),
             _ => Err(ParseError {
                 kind: ParseErrorKind::UnknownType(value),

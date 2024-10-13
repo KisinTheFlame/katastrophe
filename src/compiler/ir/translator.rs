@@ -1,33 +1,46 @@
-use std::{collections::HashMap, rc::Rc};
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-use crate::{
-    compiler::{
-        context::{Context, DocumentId},
-        err::CompileError,
-        scope::Tag,
-        syntax::ast::{
-            crumb::{FunctionPrototype, Identifier, Mutability, Parameter, Variable},
-            expression::Expression,
-            operator::{Binary, Unary},
-            package::{get_builtin, DocumentPath, UsingPath},
-            statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
-            ty::Type,
-            Document,
-        },
-    },
-    sys_error,
-};
+use crate::compiler::context::Context;
+use crate::compiler::context::DocumentId;
+use crate::compiler::err::CompileError;
+use crate::compiler::scope::Tag;
+use crate::compiler::syntax::ast::crumb::FunctionPrototype;
+use crate::compiler::syntax::ast::crumb::Identifier;
+use crate::compiler::syntax::ast::crumb::Mutability;
+use crate::compiler::syntax::ast::crumb::Parameter;
+use crate::compiler::syntax::ast::crumb::Variable;
+use crate::compiler::syntax::ast::expression::Expression;
+use crate::compiler::syntax::ast::operator::Binary;
+use crate::compiler::syntax::ast::operator::Unary;
+use crate::compiler::syntax::ast::package::get_builtin;
+use crate::compiler::syntax::ast::package::DocumentPath;
+use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::statement::DefineDetail;
+use crate::compiler::syntax::ast::statement::IfDetail;
+use crate::compiler::syntax::ast::statement::LetDetail;
+use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::WhileDetail;
+use crate::compiler::syntax::ast::ty::Type;
+use crate::compiler::syntax::ast::Document;
+use crate::sys_error;
+use crate::util::common::Array;
 
-use super::{err::IrError, instruction::IrScope};
-use super::{
-    id::{
-        next_anonymous_id, next_function_id, next_global_id, next_label_id, next_parameter_id,
-        next_variable_id,
-    },
-    instruction::{
-        ir_type::IrType, Comparator, Instruction, IrBinaryOpcode, IrFunctionPrototype, Value,
-    },
-};
+use super::err::IrError;
+use super::id::next_anonymous_id;
+use super::id::next_function_id;
+use super::id::next_global_id;
+use super::id::next_label_id;
+use super::id::next_parameter_id;
+use super::id::next_variable_id;
+use super::instruction::ir_type::IrType;
+use super::instruction::Comparator;
+use super::instruction::Instruction;
+use super::instruction::IrBinaryOpcode;
+use super::instruction::IrFunctionPrototype;
+use super::instruction::IrScope;
+use super::instruction::Value;
 
 pub struct Translator {
     document_path: Rc<DocumentPath>,
@@ -132,6 +145,8 @@ impl Translator {
             Binary::Divide => IrBinaryOpcode::DivideSigned,
             Binary::LogicalAnd | Binary::BitAnd => IrBinaryOpcode::And,
             Binary::LogicalOr | Binary::BitOr => IrBinaryOpcode::Or,
+            Binary::LeftShift => IrBinaryOpcode::LeftShift,
+            Binary::RightShift => IrBinaryOpcode::ArithmeticRightShift,
             Binary::Equal => IrBinaryOpcode::Compare(Comparator::Equal),
             Binary::NotEqual => IrBinaryOpcode::Compare(Comparator::NotEqual),
             Binary::LessThan => IrBinaryOpcode::Compare(Comparator::SignedLessThan),
@@ -139,6 +154,9 @@ impl Translator {
             Binary::GreaterThan => IrBinaryOpcode::Compare(Comparator::SignedGreaterThan),
             Binary::GreaterThanEqual => IrBinaryOpcode::Compare(Comparator::SignedGreaterThanEqual),
             Binary::Assign => return self.translate_assignment(expression_type, left, right),
+            Binary::As => {
+                return sys_error!("should be a cast expression rather than a binary expression")
+            }
         };
 
         let (left_instruction, left) = self.translate_expression(left)?;
@@ -212,7 +230,7 @@ impl Translator {
             Unary::LogicalNot | Unary::BitNot => {
                 let mask = match data_type.as_ref() {
                     IrType::Bool => 1,
-                    IrType::I32 => -1i32,
+                    IrType::Int(_) => -1i32,
                     _ => return sys_error!("type check messed."),
                 };
                 Instruction::Binary {
@@ -237,6 +255,93 @@ impl Translator {
             Instruction::Batch([expression_instruction, unary_instruction].into()).into(),
             result,
         ))
+    }
+
+    fn translate_call_expression(
+        &mut self,
+        function_name: &Rc<String>,
+        arguments: &Array<Rc<Expression>>,
+    ) -> Result<(Rc<Instruction>, Rc<Value>), CompileError> {
+        let receiver = self.declare(DeclType::Anonymous)?;
+        let Some((function_id, function_type)) = self.scope.lookup(function_name)? else {
+            return sys_error!("undeclared identifier.");
+        };
+        let IrType::Function {
+            return_type,
+            parameter_types: _,
+        } = function_type.as_ref()
+        else {
+            return sys_error!("need a function type here.");
+        };
+        let (mut instructions, arguments) = arguments
+            .iter()
+            .map(|argument| self.translate_expression(argument))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        let arguments = arguments.into();
+        let call_instruction = Instruction::Call {
+            receiver: match return_type.as_ref() {
+                IrType::Void => None,
+                _ => Some(receiver.clone()),
+            },
+            function: IrFunctionPrototype {
+                function_type,
+                id: function_id,
+            },
+            arguments,
+        };
+        instructions.push(call_instruction.into());
+        Ok((Instruction::Batch(instructions.into()).into(), receiver))
+    }
+
+    fn translate_cast_expression(
+        &mut self,
+        expression: &Rc<Expression>,
+        from_type: &Rc<Type>,
+        to_type: &Rc<Type>,
+    ) -> Result<(Rc<Instruction>, Rc<Value>), CompileError> {
+        let (instruction, from_value) = self.translate_expression(expression)?;
+        match (from_type.as_ref(), to_type.as_ref()) {
+            (Type::Int(from_width), Type::Int(to_width)) => match from_width.cmp(to_width) {
+                Ordering::Equal => Ok((instruction, from_value)),
+                Ordering::Less => {
+                    let to_value = self.declare(DeclType::Anonymous)?;
+                    let from_type: IrType = from_type.clone().into();
+                    let to_type: IrType = to_type.clone().into();
+                    let instruction = Instruction::Batch(
+                        [
+                            instruction,
+                            Instruction::SignExtension {
+                                from: (from_value, from_type.into()),
+                                to: (to_value.clone(), to_type.into()),
+                            }
+                            .into(),
+                        ]
+                        .into(),
+                    );
+                    Ok((instruction.into(), to_value))
+                }
+                Ordering::Greater => {
+                    let to_value = self.declare(DeclType::Anonymous)?;
+                    let from_type: IrType = from_type.clone().into();
+                    let to_type: IrType = to_type.clone().into();
+                    let instruction = Instruction::Batch(
+                        [
+                            instruction,
+                            Instruction::Truncate {
+                                from: (from_value, from_type.into()),
+                                to: (to_value.clone(), to_type.into()),
+                            }
+                            .into(),
+                        ]
+                        .into(),
+                    );
+                    Ok((instruction.into(), to_value))
+                }
+            },
+            (_, _) => sys_error!("should be inspected before."),
+        }
     }
 
     fn translate_expression(
@@ -266,6 +371,10 @@ impl Translator {
                 Instruction::NoOperation.into(),
                 Value::ImmediateI32(*literal).into(),
             )),
+            Expression::CharLiteral(literal) => Ok((
+                Instruction::NoOperation.into(),
+                Value::ImmediateI8(*literal as i8).into(),
+            )),
             Expression::FloatLiteral(_) => todo!(),
             Expression::BoolLiteral(literal) => Ok((
                 Instruction::NoOperation.into(),
@@ -278,37 +387,10 @@ impl Translator {
                 self.translate_binary_expression(*operator, child_type.clone(), left, right)
             }
             Expression::Call(function_name, arguments) => {
-                let receiver = self.declare(DeclType::Anonymous)?;
-                let Some((function_id, function_type)) = self.scope.lookup(function_name)? else {
-                    return sys_error!("undeclared identifier.");
-                };
-                let IrType::Function {
-                    return_type,
-                    parameter_types: _,
-                } = function_type.as_ref()
-                else {
-                    return sys_error!("need a function type here.");
-                };
-                let (mut instructions, arguments) = arguments
-                    .iter()
-                    .map(|argument| self.translate_expression(argument))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
-                let arguments = arguments.into();
-                let call_instruction = Instruction::Call {
-                    receiver: match return_type.as_ref() {
-                        IrType::Void => None,
-                        _ => Some(receiver.clone()),
-                    },
-                    function: IrFunctionPrototype {
-                        function_type,
-                        id: function_id,
-                    },
-                    arguments,
-                };
-                instructions.push(call_instruction.into());
-                Ok((Instruction::Batch(instructions.into()).into(), receiver))
+                self.translate_call_expression(function_name, arguments)
+            }
+            Expression::Cast(expression, from_type, to_type) => {
+                self.translate_cast_expression(expression, from_type, to_type)
             }
         }
     }

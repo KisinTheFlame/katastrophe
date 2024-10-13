@@ -1,14 +1,15 @@
-use std::{
-    fmt::{self, Display},
-    rc::Rc,
-};
+use std::fmt::Display;
+use std::fmt::{self};
+use std::rc::Rc;
 
-use crate::{compiler::syntax::ast::ty::Type, util::common::Array};
+use crate::compiler::bit_width::BitWidth;
+use crate::compiler::syntax::ast::ty::Type;
+use crate::util::common::Array;
 
 #[derive(Clone)]
 pub enum IrType {
     Void,
-    I32,
+    Int(BitWidth),
     Bool,
     Function {
         return_type: Rc<IrType>,
@@ -26,7 +27,7 @@ impl From<&Type> for IrType {
     fn from(value: &Type) -> Self {
         match value {
             Type::Never => IrType::Void,
-            Type::I32 => IrType::I32,
+            Type::Int(bit_width) => IrType::Int(*bit_width),
             Type::Bool => IrType::Bool,
             Type::Function {
                 return_type,
@@ -47,24 +48,27 @@ impl From<&Type> for IrType {
 
 impl Display for IrType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            IrType::Void => "void",
-            IrType::I32 => "i32",
-            IrType::Bool => "i1",
+        match self {
+            IrType::Void => write!(f, "void"),
+            IrType::Int(bit_width) => write!(f, "i{bit_width}"),
+            IrType::Bool => write!(f, "i1"),
             IrType::Function {
                 return_type: _,
                 parameter_types: _,
             } => panic!("should never print function type"),
-        };
-        write!(f, "{s}")
+        }
     }
 }
 
 impl PartialEq for IrType {
     fn eq(&self, other: &Self) -> bool {
-        use IrType::{Bool, Function, Void, I32};
+        use IrType::Bool;
+        use IrType::Function;
+        use IrType::Int;
+        use IrType::Void;
         match (self, other) {
-            (Void, Void) | (I32, I32) | (Bool, Bool) => true,
+            (Void, Void) | (Bool, Bool) => true,
+            (Int(w1), Int(w2)) => w1 == w2,
             (
                 Function {
                     return_type: r1,

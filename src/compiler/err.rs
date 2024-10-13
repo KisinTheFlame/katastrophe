@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
-use crate::util::{either::Either, reportable_error::Reportable};
+use crate::util::either::Either;
+use crate::util::reportable_error::Reportable;
 
 #[macro_export]
 macro_rules! sys_error {

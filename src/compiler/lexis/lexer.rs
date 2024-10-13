@@ -1,10 +1,12 @@
-use crate::{compiler::err::CompileError, sys_error};
+use crate::compiler::err::CompileError;
+use crate::sys_error;
 
-use super::{
-    err::{LexError, LexErrorKind},
-    text::Reader,
-    token::{Keyword, Symbol, Token},
-};
+use super::err::LexError;
+use super::err::LexErrorKind;
+use super::text::Reader;
+use super::token::Keyword;
+use super::token::Symbol;
+use super::token::Token;
 
 pub struct Lexer {
     reader: Reader,
@@ -50,6 +52,7 @@ impl Lexer {
             let token = match c {
                 '0'..='9' => Some(self.digest_number()?),
                 'a'..='z' | 'A'..='Z' | '_' => Some(self.digest_identifier_or_keyword_or_bool()?),
+                '\'' => Some(self.digest_character()?),
                 '#' => {
                     self.digest_comment()?;
                     self.digest_token()?
@@ -62,12 +65,31 @@ impl Lexer {
         }
     }
 
+    fn digest_character(&mut self) -> Result<Token, CompileError> {
+        self.assert('\'')?;
+        let c = match self.reader.peek_unwrap()? {
+            '\\' => {
+                self.reader.forward();
+                match self.reader.peek_unwrap()? {
+                    'n' => '\n',
+                    't' => '\t',
+                    c => {
+                        return Err(LexError {
+                            kind: LexErrorKind::IllegalEscapeChar(c),
+                        }
+                        .into())
+                    }
+                }
+            }
+            c => c,
+        };
+        self.reader.forward();
+        self.digest('\'')?;
+        Ok(Token::CharLiteral(c))
+    }
+
     fn digest_comment(&mut self) -> Result<(), CompileError> {
-        if let Some('#') = self.reader.peek() {
-            self.reader.forward();
-        } else {
-            return sys_error!("must be a #");
-        }
+        self.assert('#')?;
         while let Some(c) = self.reader.peek() {
             if c == '\n' {
                 break;
@@ -151,6 +173,38 @@ impl Lexer {
         false
     }
 
+    fn assert(&mut self, expected: char) -> Result<(), CompileError> {
+        if let Some(c) = self.reader.peek() {
+            if c == expected {
+                self.reader.forward();
+                Ok(())
+            } else {
+                sys_error!("{expected} must exist while {c} encountered")
+            }
+        } else {
+            sys_error!("{expected} must exist while EOF encountered")
+        }
+    }
+
+    fn digest(&mut self, expected: char) -> Result<(), CompileError> {
+        if let Some(c) = self.reader.peek() {
+            if c == expected {
+                self.reader.forward();
+                Ok(())
+            } else {
+                Err(LexError {
+                    kind: LexErrorKind::UnexpectedCharacter(c),
+                }
+                .into())
+            }
+        } else {
+            Err(LexError {
+                kind: LexErrorKind::UnexpectedEOF,
+            }
+            .into())
+        }
+    }
+
     fn digest_symbol(&mut self) -> Result<Token, LexError> {
         let c = self.reader.peek().unwrap();
         self.reader.forward();
@@ -182,6 +236,8 @@ impl Lexer {
             '<' => {
                 if self.expect('=') {
                     Symbol::LessThanEqual
+                } else if self.expect('<') {
+                    Symbol::LeftShift
                 } else {
                     Symbol::LessThan
                 }
@@ -189,6 +245,8 @@ impl Lexer {
             '>' => {
                 if self.expect('=') {
                     Symbol::GreaterThanEqual
+                } else if self.expect('>') {
+                    Symbol::RightShift
                 } else {
                     Symbol::GreaterThan
                 }

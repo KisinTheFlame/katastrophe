@@ -16,3 +16,8 @@ fn test_hello_world() {
 fn test_fibonacci() {
     test_with("fibonacci");
 }
+
+#[test]
+fn test_i8() {
+    test_with("i8");
+}

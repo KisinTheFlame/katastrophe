@@ -1,4 +1,5 @@
-use std::fmt::{self, Display};
+use std::fmt::Display;
+use std::fmt::{self};
 
 pub enum Either<L, R> {
     Left(L),

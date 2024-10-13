@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
-use crate::{compiler::syntax::ast::crumb::Identifier, util::reportable_error::Reportable};
+use crate::compiler::syntax::ast::crumb::Identifier;
+use crate::util::reportable_error::Reportable;
 
 use super::Tag;
 

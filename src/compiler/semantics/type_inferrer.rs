@@ -1,25 +1,31 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
+use std::rc::Rc;
 
-use crate::{
-    compiler::{
-        context::{Context, DocumentId},
-        err::CompileError,
-        scope::{Scope, Tag},
-        syntax::ast::{
-            crumb::{FunctionPrototype, Parameter, Variable},
-            expression::Expression,
-            operator::{Binary, Unary},
-            package::UsingPath,
-            statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
-            ty::Type,
-            Document,
-        },
-    },
-    sys_error,
-    util::common::Array,
-};
+use crate::compiler::bit_width::BitWidth;
+use crate::compiler::context::Context;
+use crate::compiler::context::DocumentId;
+use crate::compiler::err::CompileError;
+use crate::compiler::scope::Scope;
+use crate::compiler::scope::Tag;
+use crate::compiler::syntax::ast::crumb::FunctionPrototype;
+use crate::compiler::syntax::ast::crumb::Parameter;
+use crate::compiler::syntax::ast::crumb::Variable;
+use crate::compiler::syntax::ast::expression::Expression;
+use crate::compiler::syntax::ast::operator::Binary;
+use crate::compiler::syntax::ast::operator::Unary;
+use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::statement::DefineDetail;
+use crate::compiler::syntax::ast::statement::IfDetail;
+use crate::compiler::syntax::ast::statement::LetDetail;
+use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::WhileDetail;
+use crate::compiler::syntax::ast::ty::Type;
+use crate::compiler::syntax::ast::Document;
+use crate::sys_error;
+use crate::util::common::Array;
 
-use super::err::{SemanticError, TypeError};
+use super::err::SemanticError;
+use super::err::TypeError;
 
 type TypeScope = Scope<Rc<Type>>;
 
@@ -43,26 +49,31 @@ impl TypeInferrer {
         &self,
         index: &(Binary, Rc<Type>, Rc<Type>),
     ) -> Result<Rc<Type>, CompileError> {
-        self.binary_operation_type_map
-            .get(index)
-            .cloned()
-            .ok_or(TypeError::UndefinedOperation.into())
+        let (operator, left_type, right_type) = index;
+        self.binary_operation_type_map.get(index).cloned().ok_or(
+            TypeError::UndefinedBinaryExpression(*operator, left_type.clone(), right_type.clone())
+                .into(),
+        )
     }
 
     fn infer_unary_operation_type(
         &self,
         index: &(Unary, Rc<Type>),
     ) -> Result<Rc<Type>, CompileError> {
+        let (operator, ty) = index;
         self.unary_operation_type_map
             .get(index)
             .cloned()
-            .ok_or(TypeError::UndefinedOperation.into())
+            .ok_or(TypeError::UndefinedUnaryExpression(*operator, ty.clone()).into())
     }
 
-    fn infer_lvalue(&self, lvalue: &Rc<Expression>) -> Result<Rc<Type>, CompileError> {
+    fn infer_lvalue(
+        &self,
+        lvalue: &Rc<Expression>,
+    ) -> Result<(Rc<Type>, Rc<Expression>), CompileError> {
         match lvalue.as_ref() {
             Expression::Identifier(identifier) => match self.scope.lookup(identifier)? {
-                Some(var_type) => Ok(var_type),
+                Some(var_type) => Ok((var_type, Expression::Identifier(identifier.clone()).into())),
                 _ => Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into()),
             },
             _ => Err(SemanticError::IllegalLValue.into()),
@@ -71,10 +82,10 @@ impl TypeInferrer {
 
     fn infer_assignment(
         &self,
-        lvalue: Rc<Expression>,
+        lvalue: &Rc<Expression>,
         expression: &Rc<Expression>,
     ) -> Result<Rc<Expression>, CompileError> {
-        let lvalue_type = self.infer_lvalue(&lvalue)?;
+        let (lvalue_type, lvalue) = self.infer_lvalue(lvalue)?;
         let (expression, expression_type) = self.infer_expression(expression)?;
         if *lvalue_type != *expression_type {
             return Err(TypeError::AssignTypeMismatch {
@@ -98,9 +109,14 @@ impl TypeInferrer {
                 };
                 (Expression::Identifier(identifier.clone()).into(), id_type)
             }
-            Expression::IntLiteral(value) => {
-                (Expression::IntLiteral(*value).into(), Type::I32.into())
-            }
+            Expression::IntLiteral(value) => (
+                Expression::IntLiteral(*value).into(),
+                Type::Int(BitWidth::Bit32).into(),
+            ),
+            Expression::CharLiteral(literal) => (
+                Expression::CharLiteral(*literal).into(),
+                Type::Int(BitWidth::Bit8).into(),
+            ),
             Expression::FloatLiteral(_) => todo!(),
             Expression::BoolLiteral(value) => {
                 (Expression::BoolLiteral(*value).into(), Type::Bool.into())
@@ -116,7 +132,7 @@ impl TypeInferrer {
             }
             Expression::Binary(operator, _, left, right) => {
                 if *operator == Binary::Assign {
-                    let assignment = self.infer_assignment(left.clone(), right)?;
+                    let assignment = self.infer_assignment(left, right)?;
                     (assignment, Type::Never.into())
                 } else {
                     let (left, left_type) = self.infer_expression(left)?;
@@ -162,6 +178,23 @@ impl TypeInferrer {
                 (
                     Expression::Call(function_id.clone(), arguments).into(),
                     result_type,
+                )
+            }
+            Expression::Cast(expression, _, to_type) => {
+                let (expression, from_type) = self.infer_expression(expression)?;
+                match (from_type.as_ref(), to_type.as_ref()) {
+                    (Type::Int(_), Type::Int(_)) => {}
+                    (_, _) => {
+                        return Err(TypeError::IllegalCast {
+                            from_type,
+                            to_type: to_type.clone(),
+                        }
+                        .into());
+                    }
+                }
+                (
+                    Expression::Cast(expression, from_type, to_type.clone()).into(),
+                    to_type.clone(),
                 )
             }
         };
@@ -410,11 +443,25 @@ impl TypeInferrer {
             Binary::Subtract,
             Binary::Multiply,
             Binary::Divide,
+            Binary::BitAnd,
+            Binary::BitOr,
         ] {
-            self.binary_operation_type_map.insert(
-                (operator, Type::I32.into(), Type::I32.into()),
-                Type::I32.into(),
-            );
+            for bit_width in BitWidth::all() {
+                let t = Rc::new(Type::Int(*bit_width));
+                self.binary_operation_type_map
+                    .insert((operator, t.clone(), t.clone()), t);
+            }
+        }
+
+        for operator in [Binary::LeftShift, Binary::RightShift] {
+            for w1 in BitWidth::all() {
+                for w2 in BitWidth::all() {
+                    let left_type = Rc::new(Type::Int(*w1));
+                    let right_type = Type::Int(*w2).into();
+                    self.binary_operation_type_map
+                        .insert((operator, left_type.clone(), right_type), left_type);
+                }
+            }
         }
 
         for operator in [
@@ -425,10 +472,12 @@ impl TypeInferrer {
             Binary::GreaterThan,
             Binary::GreaterThanEqual,
         ] {
-            self.binary_operation_type_map.insert(
-                (operator, Type::I32.into(), Type::I32.into()),
-                Type::Bool.into(),
-            );
+            let bool_type = Rc::new(Type::Bool);
+            for bit_width in BitWidth::all() {
+                let t = Rc::new(Type::Int(*bit_width));
+                self.binary_operation_type_map
+                    .insert((operator, t.clone(), t.clone()), bool_type.clone());
+            }
         }
 
         for operator in [Binary::LogicalAnd, Binary::LogicalOr] {
@@ -440,12 +489,16 @@ impl TypeInferrer {
     }
 
     fn init_unary_operator_type_map(&mut self) {
-        self.unary_operation_type_map
-            .insert((Unary::BitNot, Type::I32.into()), Type::I32.into());
+        for bit_width in BitWidth::all() {
+            let t = Rc::new(Type::Int(*bit_width));
+            self.unary_operation_type_map
+                .insert((Unary::BitNot, t.clone()), t.clone());
+            self.unary_operation_type_map
+                .insert((Unary::Negative, t.clone()), t.clone());
+        }
+
         self.unary_operation_type_map
             .insert((Unary::LogicalNot, Type::Bool.into()), Type::Bool.into());
-        self.unary_operation_type_map
-            .insert((Unary::Negative, Type::I32.into()), Type::I32.into());
     }
 
     /// # Errors

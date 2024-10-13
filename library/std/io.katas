@@ -1,7 +1,7 @@
-def builtin getchar() -> i32 {
-    # builtin
+def builtin getchar() -> i8 {
+    # builtin.
 }
 
-def builtin putchar(c as i32) -> bool {
-    # builtin
+def builtin putchar(c as i8) -> bool {
+    # builtin.
 }

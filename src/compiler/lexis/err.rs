@@ -3,6 +3,7 @@ use crate::util::reportable_error::Reportable;
 pub enum LexErrorKind {
     IllegalIntegerLiteral(String),
     IllegalFloatLiteral(String),
+    IllegalEscapeChar(char),
 
     UnexpectedCharacter(char),
     UnexpectedEOF,
@@ -19,6 +20,7 @@ impl Reportable for LexError {
             | LexErrorKind::IllegalFloatLiteral(ref s) => {
                 format!("encountering illegal literal: {s}")
             }
+            LexErrorKind::IllegalEscapeChar(c) => format!("illegal escape char: {c}"),
             LexErrorKind::UnexpectedCharacter(c) => {
                 format!("encountering unexpected character: {c}")
             }

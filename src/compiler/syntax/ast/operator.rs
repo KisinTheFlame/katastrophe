@@ -1,10 +1,12 @@
-use std::fmt::{self, Display};
+use std::fmt::Display;
+use std::fmt::{self};
 
 pub trait Operator {
-    /// precedence and associativity: 
+    /// precedence and associativity:
     /// - (unary) - ! ~ : 14 right
     /// - * / : 13 left
     /// - + - : 12 left
+    /// - << >> : 11 left
     /// - < > <= >= : 10 left
     /// - == != : 9 left
     /// - & : 8 left
@@ -27,7 +29,7 @@ pub enum Unary {
 impl Operator for Unary {
     fn precedence(&self) -> u8 {
         match self {
-            Unary::LogicalNot | Unary::BitNot | Unary::Negative => 14u8,
+            Unary::LogicalNot | Unary::BitNot | Unary::Negative => 15u8,
         }
     }
 
@@ -62,6 +64,9 @@ pub enum Binary {
     BitAnd,
     BitOr,
 
+    LeftShift,
+    RightShift,
+
     Equal,
     NotEqual,
     LessThan,
@@ -70,13 +75,17 @@ pub enum Binary {
     GreaterThanEqual,
 
     Assign,
+
+    As,
 }
 
 impl Operator for Binary {
     fn precedence(&self) -> u8 {
         match self {
+            Binary::As => 14u8,
             Binary::Multiply | Binary::Divide => 13u8,
             Binary::Add | Binary::Subtract => 12u8,
+            Binary::LeftShift | Binary::RightShift => 11u8,
             Binary::LessThan
             | Binary::LessThanEqual
             | Binary::GreaterThan
@@ -100,12 +109,15 @@ impl Operator for Binary {
             | Binary::LogicalOr
             | Binary::BitAnd
             | Binary::BitOr
+            | Binary::LeftShift
+            | Binary::RightShift
             | Binary::Equal
             | Binary::NotEqual
             | Binary::LessThan
             | Binary::LessThanEqual
             | Binary::GreaterThan
-            | Binary::GreaterThanEqual => true,
+            | Binary::GreaterThanEqual
+            | Binary::As => true,
             Binary::Assign => false,
         }
     }
@@ -122,6 +134,8 @@ impl Display for Binary {
             Binary::LogicalOr => "LogicalOr",
             Binary::BitAnd => "BitAnd",
             Binary::BitOr => "BitOr",
+            Binary::LeftShift => "LeftShift",
+            Binary::RightShift => "RightShift",
             Binary::Equal => "Equal",
             Binary::NotEqual => "NotEqual",
             Binary::LessThan => "LessThan",
@@ -129,6 +143,7 @@ impl Display for Binary {
             Binary::GreaterThan => "GreaterThan",
             Binary::GreaterThanEqual => "GreaterThanEqual",
             Binary::Assign => "Assign",
+            Binary::As => "As",
         };
         write!(f, "{s}")
     }

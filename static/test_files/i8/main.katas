@@ -1,0 +1,27 @@
+using std::io::putchar;
+
+def print_number(x as i32) {
+    if x <= 9 {
+        putchar('0' + x as i8);
+        return;
+    }
+    print_number(x / 10);
+    putchar('0' + (x - x / 10 * 10) as i8);
+}
+
+def newline() {
+    putchar('\n');
+}
+
+def main() -> i32 {
+    let a = 1;
+    let b as i8 = 2 as i8;
+    let c = 3 as i8;
+    print_number(a);
+    newline();
+    print_number(b as i32);
+    newline();
+    print_number(c as i32);
+    newline();
+    return 0;
+}

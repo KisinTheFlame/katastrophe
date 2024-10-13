@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 
 use crate::define_id_generator;
 
-use super::ir::instruction::{Instruction, IrModel};
-use super::syntax::ast::crumb::{Identifier, Mutability};
+use super::ir::instruction::Instruction;
+use super::ir::instruction::IrModel;
+use super::syntax::ast::crumb::Identifier;
+use super::syntax::ast::crumb::Mutability;
 use super::syntax::ast::package::DocumentPath;
 use super::syntax::ast::ty::Type;
 use super::syntax::ast::Document;
