@@ -1,9 +1,11 @@
 use std::rc::Rc;
 
-use crate::{
-    compiler::syntax::ast::{crumb::Identifier, ty::Type},
-    util::{common::Array, reportable_error::Reportable},
-};
+use crate::compiler::syntax::ast::crumb::Identifier;
+use crate::compiler::syntax::ast::operator::Binary;
+use crate::compiler::syntax::ast::operator::Unary;
+use crate::compiler::syntax::ast::ty::Type;
+use crate::util::common::Array;
+use crate::util::reportable_error::Reportable;
 
 pub enum SemanticError {
     UndeclaredIdentifier(Rc<Identifier>),
@@ -28,7 +30,8 @@ impl Reportable for SemanticError {
 pub enum TypeError {
     ShouldBeFunctionType,
 
-    UndefinedOperation,
+    UndefinedUnaryExpression(Unary, Rc<Type>),
+    UndefinedBinaryExpression(Binary, Rc<Type>, Rc<Type>),
     ProcessInGlobal,
 
     ReturnTypeMismatch {
@@ -45,6 +48,10 @@ pub enum TypeError {
         parameter_types: Array<Rc<Type>>,
         argument_types: Array<Rc<Type>>,
     },
+    IllegalCast {
+        from_type: Rc<Type>,
+        to_type: Rc<Type>,
+    },
 
     UndeclaredMainFunction,
     IllegalMainFunctionType,
@@ -56,8 +63,11 @@ impl Reportable for TypeError {
             TypeError::ShouldBeFunctionType => {
                 panic!("should be a function type.")
             }
-            TypeError::UndefinedOperation => {
-                panic!("undefined operation.")
+            TypeError::UndefinedUnaryExpression(operator, ty) => {
+                panic!("undefined unary expression: {operator} {ty}")
+            }
+            TypeError::UndefinedBinaryExpression(operator, t1, t2) => {
+                panic!("undefined binary expression: {t1} {operator} {t2}")
             }
             TypeError::ProcessInGlobal => {
                 panic!("process statements found in global.")
@@ -97,6 +107,9 @@ impl Reportable for TypeError {
                 parameter types: {parameter_types},
                 argument types: {argument_types}"
                 )
+            }
+            TypeError::IllegalCast { from_type, to_type } => {
+                panic!("illegal cast from {from_type} to {to_type}")
             }
             TypeError::UndeclaredMainFunction => {
                 panic!("main function not declared in input document.")

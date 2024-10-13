@@ -4,7 +4,8 @@ use std::rc::Rc;
 
 use compiler::context::Context;
 use compiler::err::CompileError;
-use compiler::ir::builtin::{generate_entry, generate_libc_function};
+use compiler::ir::builtin::generate_entry;
+use compiler::ir::builtin::generate_libc_function;
 use compiler::ir::translator::Translator;
 use compiler::semantics::mutability_checker::MutabilityChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;

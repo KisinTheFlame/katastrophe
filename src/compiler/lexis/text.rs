@@ -1,3 +1,8 @@
+use crate::compiler::err::CompileError;
+
+use super::err::LexError;
+use super::err::LexErrorKind;
+
 pub struct Reader {
     code: Vec<char>,
     position: usize,
@@ -16,6 +21,16 @@ impl Reader {
             return None;
         }
         Some(self.code[self.position])
+    }
+
+    /// # Errors
+    pub fn peek_unwrap(&self) -> Result<char, CompileError> {
+        self.peek().ok_or(
+            LexError {
+                kind: LexErrorKind::UnexpectedEOF,
+            }
+            .into(),
+        )
     }
 
     pub fn forward(&mut self) {

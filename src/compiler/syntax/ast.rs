@@ -1,8 +1,10 @@
 use core::fmt;
 
-use std::{fmt::Display, rc::Rc};
+use std::fmt::Display;
+use std::rc::Rc;
 
-use crate::util::{common::Array, pretty_format::PrettyFormat};
+use crate::util::common::Array;
+use crate::util::pretty_format::PrettyFormat;
 
 use self::statement::Statement;
 

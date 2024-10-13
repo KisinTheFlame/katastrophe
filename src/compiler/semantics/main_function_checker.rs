@@ -1,11 +1,9 @@
-use crate::{
-    compiler::{
-        context::{Context, DocumentId},
-        err::CompileError,
-        syntax::ast::ty::Type,
-    },
-    sys_error,
-};
+use crate::compiler::bit_width::BitWidth;
+use crate::compiler::context::Context;
+use crate::compiler::context::DocumentId;
+use crate::compiler::err::CompileError;
+use crate::compiler::syntax::ast::ty::Type;
+use crate::sys_error;
 
 use super::err::TypeError;
 
@@ -21,7 +19,7 @@ pub fn main_function_check(
         return Err(TypeError::UndeclaredMainFunction.into());
     };
     let expected_main_function_type = Type::Function {
-        return_type: Type::I32.into(),
+        return_type: Type::Int(BitWidth::Bit32).into(),
         parameter_types: [].into(),
     };
     if *main_type.as_ref() != expected_main_function_type {

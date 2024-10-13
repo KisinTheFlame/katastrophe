@@ -1,12 +1,17 @@
-use std::{fs, process::Command, rc::Rc};
+use std::fs;
+use std::process::Command;
+use std::rc::Rc;
 
-use katastrophe::{
-    assemble,
-    compiler::{
-        context::Context, err::CompileError, semantics::main_function_checker::main_function_check,
-    },
-    ir_generate, ir_translate, mutability_check, syntax_analyze, type_infer, util::file::gen_tmp_exe_path,
-};
+use katastrophe::assemble;
+use katastrophe::compiler::context::Context;
+use katastrophe::compiler::err::CompileError;
+use katastrophe::compiler::semantics::main_function_checker::main_function_check;
+use katastrophe::ir_generate;
+use katastrophe::ir_translate;
+use katastrophe::mutability_check;
+use katastrophe::syntax_analyze;
+use katastrophe::type_infer;
+use katastrophe::util::file::gen_tmp_exe_path;
 
 const PATH_TO_TEST_FILES: &str = "static/test_files";
 

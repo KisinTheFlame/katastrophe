@@ -1,6 +1,8 @@
-use std::{fs, path::Path};
+use std::fs;
+use std::path::Path;
 
-use rand::{distributions::Alphanumeric, Rng};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 
 use crate::constants::common::TMP;
 

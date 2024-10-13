@@ -1,18 +1,18 @@
 using std::io::putchar;
 
 def main() -> i32 {
-    putchar(104);
-    putchar(101);
-    putchar(108);
-    putchar(108);
-    putchar(111);
-    putchar(44);
-    putchar(32);
-    putchar(119);
-    putchar(111);
-    putchar(114);
-    putchar(108);
-    putchar(100);
-    putchar(33);
+    putchar('h');
+    putchar('e');
+    putchar('l');
+    putchar('l');
+    putchar('o');
+    putchar(',');
+    putchar(' ');
+    putchar('w');
+    putchar('o');
+    putchar('r');
+    putchar('l');
+    putchar('d');
+    putchar('!');
     return 0;
 }

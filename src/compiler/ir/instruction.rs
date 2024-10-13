@@ -1,12 +1,11 @@
-use std::{
-    fmt::{self, Display},
-    rc::Rc,
-};
+use std::fmt::Display;
+use std::fmt::{self};
+use std::rc::Rc;
 
-use crate::{
-    compiler::scope::Scope,
-    util::{common::Array, pretty_format::{indent, PrettyFormat}},
-};
+use crate::compiler::scope::Scope;
+use crate::util::common::Array;
+use crate::util::pretty_format::indent;
+use crate::util::pretty_format::PrettyFormat;
 
 use self::ir_type::IrType;
 
@@ -23,6 +22,7 @@ pub enum Value {
     Void,
     Register(IrId),
     ImmediateI32(i32),
+    ImmediateI8(i8),
     ImmediateBool(bool),
     StackPointer(IrId),
     GlobalPointer(IrId),
@@ -41,6 +41,7 @@ impl Display for Value {
                 write!(f, "%{id}")
             }
             Value::ImmediateI32(value) => write!(f, "{value}"),
+            Value::ImmediateI8(value) => write!(f, "{value}"),
             Value::ImmediateBool(value) => {
                 let value = i32::from(*value);
                 write!(f, "{value}")
@@ -66,6 +67,9 @@ pub enum IrBinaryOpcode {
     Or,
     Xor,
 
+    LeftShift,
+    ArithmeticRightShift,
+
     Compare(Comparator),
 }
 
@@ -79,6 +83,8 @@ impl Display for IrBinaryOpcode {
             IrBinaryOpcode::And => write!(f, "and"),
             IrBinaryOpcode::Or => write!(f, "or"),
             IrBinaryOpcode::Xor => write!(f, "xor"),
+            IrBinaryOpcode::LeftShift => write!(f, "shl"),
+            IrBinaryOpcode::ArithmeticRightShift => write!(f, "ashr"),
             IrBinaryOpcode::Compare(comparator) => write!(f, "icmp {comparator}"),
         }
     }
@@ -140,6 +146,14 @@ pub enum Instruction {
         to: Rc<Value>,
     },
     Bitcast {
+        from: IrModel,
+        to: IrModel,
+    },
+    Truncate {
+        from: IrModel,
+        to: IrModel,
+    },
+    SignExtension {
         from: IrModel,
         to: IrModel,
     },
@@ -318,6 +332,22 @@ impl PrettyFormat for Instruction {
                     "{indentation}{to_value} = bitcast {from_type} {from_value} to {to_type}"
                 )
             }
+            Instruction::Truncate {
+                from: (from_value, from_type),
+                to: (to_value, to_type),
+            } => {
+                writeln!(
+                    f,
+                    "{indentation}{to_value} = trunc {from_type} {from_value} to {to_type}"
+                )
+            }
+            Instruction::SignExtension {
+                from: (from_value, from_type),
+                to: (to_value, to_type),
+            } => writeln!(
+                f,
+                "{indentation}{to_value} = sext {from_type} {from_value} to {to_type}"
+            ),
             Instruction::Allocate((pointer, data_type)) => {
                 writeln!(f, "{indentation}{pointer} = alloca {data_type}")
             }

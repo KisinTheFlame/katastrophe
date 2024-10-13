@@ -1,31 +1,40 @@
-use std::{collections::HashMap, mem, rc::Rc};
+use std::collections::HashMap;
+use std::mem;
+use std::rc::Rc;
 
-use crate::{
-    compiler::{
-        context::{next_document_id, Context, DocumentId},
-        err::CompileError,
-        lexis::{
-            lexer::Lexer,
-            token::{Keyword, Symbol, Token},
-        },
-        scope::{Scope, Tag},
-        syntax::ast::package::load_package_path,
-    },
-    util::common::Array,
-};
+use crate::compiler::context::next_document_id;
+use crate::compiler::context::Context;
+use crate::compiler::context::DocumentId;
+use crate::compiler::err::CompileError;
+use crate::compiler::lexis::lexer::Lexer;
+use crate::compiler::lexis::token::Keyword;
+use crate::compiler::lexis::token::Symbol;
+use crate::compiler::lexis::token::Token;
+use crate::compiler::scope::Scope;
+use crate::compiler::scope::Tag;
+use crate::compiler::syntax::ast::package::load_package_path;
+use crate::util::common::Array;
 
-use super::{
-    ast::{
-        crumb::{FunctionPrototype, Identifier, Mutability, Parameter, Variable},
-        expression::Expression,
-        operator::{Binary, Operator, Unary},
-        package::{DocumentPath, UsingPath},
-        statement::{DefineDetail, IfDetail, LetDetail, Statement, WhileDetail},
-        ty::Type,
-        Document,
-    },
-    err::{ParseError, ParseErrorKind},
-};
+use super::ast::crumb::FunctionPrototype;
+use super::ast::crumb::Identifier;
+use super::ast::crumb::Mutability;
+use super::ast::crumb::Parameter;
+use super::ast::crumb::Variable;
+use super::ast::expression::Expression;
+use super::ast::operator::Binary;
+use super::ast::operator::Operator;
+use super::ast::operator::Unary;
+use super::ast::package::DocumentPath;
+use super::ast::package::UsingPath;
+use super::ast::statement::DefineDetail;
+use super::ast::statement::IfDetail;
+use super::ast::statement::LetDetail;
+use super::ast::statement::Statement;
+use super::ast::statement::WhileDetail;
+use super::ast::ty::Type;
+use super::ast::Document;
+use super::err::ParseError;
+use super::err::ParseErrorKind;
 
 pub struct Parser {
     lexer: Lexer,
@@ -152,6 +161,11 @@ impl Parser {
         Expression::IntLiteral(literal)
     }
 
+    fn parse_char_literal(&mut self, literal: char) -> Expression {
+        self.lexer.next();
+        Expression::CharLiteral(literal)
+    }
+
     fn parse_float_literal(&mut self, literal: f64) -> Expression {
         self.lexer.next();
         Expression::FloatLiteral(literal)
@@ -198,6 +212,10 @@ impl Parser {
                 let literal = *literal;
                 Ok(self.parse_integer_literal(literal))
             }
+            Some(Token::CharLiteral(literal)) => {
+                let literal = *literal;
+                Ok(self.parse_char_literal(literal))
+            }
             Some(Token::FloatLiteral(literal)) => {
                 let literal = *literal;
                 Ok(self.parse_float_literal(literal))
@@ -218,6 +236,9 @@ impl Parser {
     }
 
     fn peek_binary_operator(&mut self) -> Option<Binary> {
+        if let Some(Token::Keyword(Keyword::As)) = self.lexer.peek() {
+            return Some(Binary::As);
+        }
         let Some(Token::Symbol(symbol)) = self.lexer.peek() else {
             return None;
         };
@@ -230,6 +251,8 @@ impl Parser {
             Symbol::LogicalOr => Some(Binary::LogicalOr),
             Symbol::BitAnd => Some(Binary::BitAnd),
             Symbol::BitOr => Some(Binary::BitOr),
+            Symbol::LeftShift => Some(Binary::LeftShift),
+            Symbol::RightShift => Some(Binary::RightShift),
             Symbol::Equal => Some(Binary::Equal),
             Symbol::NotEqual => Some(Binary::NotEqual),
             Symbol::LessThan => Some(Binary::LessThan),
@@ -255,9 +278,8 @@ impl Parser {
     fn parse_binary_expression_rhs(
         &mut self,
         last_precedence: u8,
-        lhs: Expression,
+        mut lhs: Expression,
     ) -> Result<Expression, CompileError> {
-        let mut lhs = lhs;
         loop {
             let Some(current_operator) = self.peek_binary_operator() else {
                 return Ok(lhs);
@@ -268,6 +290,12 @@ impl Parser {
             }
 
             self.lexer.next();
+
+            if current_operator == Binary::As {
+                let to_type = self.parse_type()?;
+                lhs = Expression::Cast(Rc::new(lhs), Type::Unknown.into(), to_type.into());
+                continue;
+            }
 
             let rhs = self.parse_primary()?;
 
@@ -347,7 +375,11 @@ impl Parser {
         let condition = self.parse_expression()?.into();
         let true_body = self.parse_block_statement(context)?.into();
         let false_body = if self.expect_keyword(Keyword::Else) {
-            Some(self.parse_block_statement(context)?.into())
+            if self.match_keyword(Keyword::If) {
+                Some(Statement::If(self.parse_if_statement(context)?).into())
+            } else {
+                Some(self.parse_block_statement(context)?.into())
+            }
         } else {
             None
         };

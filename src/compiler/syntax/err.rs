@@ -1,7 +1,7 @@
-use crate::{
-    compiler::lexis::token::{Keyword, Symbol, Token},
-    util::reportable_error::Reportable,
-};
+use crate::compiler::lexis::token::Keyword;
+use crate::compiler::lexis::token::Symbol;
+use crate::compiler::lexis::token::Token;
+use crate::util::reportable_error::Reportable;
 
 pub enum ParseErrorKind {
     MissingIdentifier,

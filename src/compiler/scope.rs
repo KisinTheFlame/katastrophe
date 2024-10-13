@@ -1,12 +1,12 @@
-use std::{
-    collections::HashMap,
-    fmt::{self, Display},
-    rc::Rc,
-};
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::fmt::{self};
+use std::rc::Rc;
 
 use self::err::ScopeError;
 
-use super::{err::CompileError, syntax::ast::crumb::Identifier};
+use super::err::CompileError;
+use super::syntax::ast::crumb::Identifier;
 
 mod err;
 
@@ -42,7 +42,11 @@ impl Display for Tag {
 
 impl PartialEq for Tag {
     fn eq(&self, other: &Self) -> bool {
-        use Tag::{Anonymous, Builtin, Function, Global, Named};
+        use Tag::Anonymous;
+        use Tag::Builtin;
+        use Tag::Function;
+        use Tag::Global;
+        use Tag::Named;
         match (self, other) {
             (Anonymous, Anonymous) | (Builtin, Builtin) | (Global, Global) => true,
             (Named(l), Named(r)) => l == r,
