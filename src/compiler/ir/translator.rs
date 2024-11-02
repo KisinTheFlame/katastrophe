@@ -322,7 +322,7 @@ impl Translator {
     }
 
     /// source code example:
-    /// ```
+    /// ```llvm
     /// if condition {
     ///     do_something_a
     /// } else {
@@ -332,7 +332,7 @@ impl Translator {
     ///
     ///
     /// translation:
-    /// ```
+    /// ```llvm
     ///     br label %if_start_label
     /// if_start_label:
     ///     condition_instructions
@@ -397,7 +397,7 @@ impl Translator {
     }
 
     /// source code example:
-    /// ```
+    /// ```llvm
     /// while condition {
     ///     do_something
     /// }
@@ -405,7 +405,7 @@ impl Translator {
     ///
     ///
     /// translation:
-    /// ```
+    /// ```llvm
     ///     br label %check_point_label
     /// check_point_label:
     ///     condition_instructions

@@ -1,0 +1,41 @@
+using std::io::putchar;
+using std::process::exit;
+
+let char_0 = 48;
+
+def print_number(x as i32) {
+    if x <= 9 {
+        putchar(char_0 + x);
+        return;
+    }
+    print_number(x / 10);
+    putchar(char_0 + (x - x / 10 * 10));
+}
+
+def newline() {
+    putchar(10);
+}
+
+def fibonacci(x as i32) -> i32 {
+    if x < 0 {
+        exit(1);
+    }
+
+    if x == 0 {
+        return 0;
+    }
+
+    if x == 1 {
+        return 1;
+    }
+
+    return fibonacci(x - 1) + fibonacci(x - 2);
+}
+
+def main() -> i32 {
+    print_number(fibonacci(2));
+    newline();
+    print_number(fibonacci(5));
+    newline();
+    return 0;
+}

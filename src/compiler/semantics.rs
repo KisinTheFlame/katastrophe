@@ -1,4 +1,4 @@
-pub mod main_function_check;
+pub mod main_function_checker;
 pub mod mutability_checker;
 pub mod type_inferrer;
 
