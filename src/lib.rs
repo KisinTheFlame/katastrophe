@@ -89,7 +89,7 @@ pub fn ir_generate(
         .unwrap()
         .get(&String::from("main"))
         .unwrap();
-    let entry_ir = generate_entry(main_value.clone())?;
+    let entry_ir = generate_entry(main_value.clone());
     let ir_code = formatdoc! {"
         {builtin_ir}
         {ir}

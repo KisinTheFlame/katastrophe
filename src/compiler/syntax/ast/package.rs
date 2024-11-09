@@ -6,8 +6,6 @@ use std::rc::Rc;
 use crate::compiler::context::Context;
 use crate::compiler::err::CompileError;
 use crate::compiler::ir::instruction::Value;
-use crate::compiler::syntax::err::ParseError;
-use crate::compiler::syntax::err::ParseErrorKind;
 use crate::compiler::syntax::parser::Parser;
 use crate::util::common::Array;
 
@@ -92,10 +90,7 @@ fn get_std_package_path(document_path: &Rc<DocumentPath>) -> String {
 fn load_package(context: &mut Context, path: Rc<DocumentPath>) -> Result<(), CompileError> {
     let file_path = get_package_path(&path) + ".katas";
     let Ok(code) = fs::read_to_string(file_path) else {
-        return Err(ParseError {
-            kind: ParseErrorKind::UnknownPackage,
-        }
-        .into());
+        return Err(CompileError::UnknownPackage);
     };
     Parser::new(path, &code).parse_document(context)?;
     Ok(())

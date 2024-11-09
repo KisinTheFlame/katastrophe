@@ -18,8 +18,6 @@ use crate::compiler::syntax::ast::statement::Statement;
 use crate::compiler::syntax::ast::statement::WhileDetail;
 use crate::sys_error;
 
-use super::err::SemanticError;
-
 type MutabilityScope = Scope<Mutability>;
 
 pub struct MutabilityChecker {
@@ -41,7 +39,7 @@ impl MutabilityChecker {
         document_id: DocumentId,
     ) -> Result<(), CompileError> {
         let Some(document) = context.document_map.get(&document_id) else {
-            return sys_error!("document must exist");
+            sys_error!("document must exist");
         };
         self.scope.enter(Tag::Global);
         document
@@ -121,7 +119,7 @@ impl MutabilityChecker {
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let id = context.id_map.get(document_path).unwrap();
                 let Some(mutability) = context.mutability_map.get(id).unwrap().get(symbol) else {
-                    return sys_error!("used symbol must exist");
+                    sys_error!("used symbol must exist");
                 };
                 self.scope.declare(symbol.clone(), *mutability)?;
                 Ok(())
@@ -133,12 +131,12 @@ impl MutabilityChecker {
         match lvalue {
             Expression::Identifier(identifier) => {
                 let Some(mutability) = self.scope.lookup(identifier)? else {
-                    return Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into());
+                    return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
                 };
                 if mutability == Mutability::Mutable {
                     Ok(())
                 } else {
-                    Err(SemanticError::AssigningImmutableVariable(identifier.clone()).into())
+                    Err(CompileError::AssigningImmutableVariable(identifier.clone()))
                 }
             }
             Expression::IntLiteral(_)
@@ -148,7 +146,7 @@ impl MutabilityChecker {
             | Expression::Unary(_, _, _)
             | Expression::Binary(_, _, _, _)
             | Expression::Call(_, _)
-            | Expression::Cast(_, _, _) => Err(SemanticError::IllegalLValue.into()),
+            | Expression::Cast(_, _, _) => Err(CompileError::IllegalLValue),
         }
     }
 }

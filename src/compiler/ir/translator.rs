@@ -27,7 +27,6 @@ use crate::compiler::syntax::ast::Document;
 use crate::sys_error;
 use crate::util::common::Array;
 
-use super::err::IrError;
 use super::id::next_anonymous_id;
 use super::id::next_function_id;
 use super::id::next_global_id;
@@ -155,7 +154,7 @@ impl Translator {
             Binary::GreaterThanEqual => IrBinaryOpcode::Compare(Comparator::SignedGreaterThanEqual),
             Binary::Assign => return self.translate_assignment(expression_type, left, right),
             Binary::As => {
-                return sys_error!("should be a cast expression rather than a binary expression")
+                sys_error!("should be a cast expression rather than a binary expression")
             }
         };
 
@@ -185,10 +184,10 @@ impl Translator {
         lvalue_expression: &Rc<Expression>,
     ) -> Result<Rc<Value>, CompileError> {
         let Expression::Identifier(ref identifier) = **lvalue_expression else {
-            return sys_error!("should be inspected in type check.");
+            sys_error!("should be inspected in type check.");
         };
         let Some((value, _)) = self.scope.lookup(identifier)? else {
-            return sys_error!("undeclared identifier here.");
+            sys_error!("undeclared identifier here.");
         };
         match value.as_ref() {
             Value::StackPointer(_) | Value::GlobalPointer(_) | Value::Parameter(_) => Ok(value),
@@ -231,7 +230,7 @@ impl Translator {
                 let mask = match data_type.as_ref() {
                     IrType::Bool => 1,
                     IrType::Int(_) => -1i32,
-                    _ => return sys_error!("type check messed."),
+                    _ => sys_error!("type check messed."),
                 };
                 Instruction::Binary {
                     operator: IrBinaryOpcode::Xor,
@@ -264,14 +263,14 @@ impl Translator {
     ) -> Result<(Rc<Instruction>, Rc<Value>), CompileError> {
         let receiver = self.declare(DeclType::Anonymous)?;
         let Some((function_id, function_type)) = self.scope.lookup(function_name)? else {
-            return sys_error!("undeclared identifier.");
+            sys_error!("undeclared identifier.");
         };
         let IrType::Function {
             return_type,
             parameter_types: _,
         } = function_type.as_ref()
         else {
-            return sys_error!("need a function type here.");
+            sys_error!("need a function type here.");
         };
         let (mut instructions, arguments) = arguments
             .iter()
@@ -349,8 +348,8 @@ impl Translator {
         expression: &Rc<Expression>,
     ) -> Result<(Rc<Instruction>, Rc<Value>), CompileError> {
         match expression.as_ref() {
-            Expression::Identifier(identifier) => self.scope.lookup(identifier)?.map_or(
-                sys_error!("should be inspected in type checking."),
+            Expression::Identifier(identifier) => self.scope.lookup(identifier)?.map_or_else(
+                || sys_error!("should be inspected in type checking."),
                 |(value, data_type)| match *value {
                     Value::Register(_) | Value::Parameter(_) => {
                         Ok((Instruction::NoOperation.into(), value))
@@ -542,7 +541,7 @@ impl Translator {
         let assign_instruction = match (self.scope.is_global()?, mutability) {
             (true, Mutability::Mutable) => {
                 let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
-                    return sys_error!("must find it.");
+                    sys_error!("must find it.");
                 };
                 Instruction::Global {
                     lvalue,
@@ -552,7 +551,7 @@ impl Translator {
             }
             (true, Mutability::Immutable) => {
                 let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
-                    return sys_error!("must find it.");
+                    sys_error!("must find it.");
                 };
                 Instruction::Constant {
                     lvalue,
@@ -600,14 +599,14 @@ impl Translator {
         let (expression_instructions, expression) = self.translate_expression(&return_value)?;
         let function_name = self.scope.current_function()?;
         let Some((_, function_type)) = self.scope.lookup(&function_name)? else {
-            return sys_error!("must be a function type");
+            sys_error!("must be a function type");
         };
         let IrType::Function {
             return_type,
             parameter_types: _,
         } = function_type.as_ref()
         else {
-            return sys_error!("must be a function type");
+            sys_error!("must be a function type");
         };
         let return_type = return_type.clone();
         let instructions = [
@@ -637,11 +636,11 @@ impl Translator {
         } = prototype.as_ref();
 
         let Some((function, function_type)) = self.scope.lookup(identifier)? else {
-            return sys_error!("must pre scanned it.");
+            sys_error!("must pre scanned it.");
         };
         if *builtin {
             let Some(ir_code) = get_builtin(&self.document_path, identifier, &function) else {
-                return Err(IrError::BuiltinFunctionFileNotExist(identifier.clone()).into());
+                return Err(CompileError::BuiltinFunctionFileNotExist(identifier.clone()));
             };
             return Ok(Instruction::BuiltinDefinition(ir_code).into());
         }
@@ -650,7 +649,7 @@ impl Translator {
             parameter_types,
         } = function_type.as_ref()
         else {
-            return sys_error!("must be a function type.");
+            sys_error!("must be a function type.");
         };
         self.scope.enter(Tag::Function(identifier.clone()));
         let parameters = parameters
@@ -705,7 +704,7 @@ impl Translator {
                 let id = context.id_map.get(document_path).unwrap();
                 let Some((value, ir_type)) = context.ir_model_map.get(id).unwrap().get(symbol)
                 else {
-                    return sys_error!("used symbol must exist");
+                    sys_error!("used symbol must exist");
                 };
                 self.scope
                     .declare(symbol.clone(), (value.clone(), ir_type.clone()))?;
@@ -735,13 +734,13 @@ impl Translator {
     ) -> Result<(), CompileError> {
         self.scope.enter(Tag::Global);
         let Some(document) = context.document_map.get(&document_id) else {
-            return sys_error!("document must exist");
+            sys_error!("document must exist");
         };
         let mut ir_model_map = HashMap::new();
         document
             .statements
             .iter()
-            .try_for_each(|statement| match statement.as_ref() {
+            .try_for_each::<_, Result<_, CompileError>>(|statement| match statement.as_ref() {
                 Statement::Empty
                 | Statement::Block(_)
                 | Statement::Return(_)
@@ -793,7 +792,7 @@ impl Translator {
         document_id: DocumentId,
     ) -> Result<(), CompileError> {
         let Some(document) = context.document_map.get(&document_id) else {
-            return sys_error!("document must exist");
+            sys_error!("document must exist");
         };
         let instruction = self.translate_document(context, document)?;
         context.instruction.insert(document_id, instruction);
