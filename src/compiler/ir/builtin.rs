@@ -4,7 +4,6 @@ use std::rc::Rc;
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::err::CompileError;
 
-use super::err::IrError;
 use super::instruction::ir_type::IrType;
 use super::instruction::Instruction;
 use super::instruction::IrFunctionPrototype;
@@ -14,12 +13,12 @@ use super::instruction::Value;
 pub fn generate_libc_function() -> Result<Instruction, CompileError> {
     match fs::read_to_string("static/libc_declaration.ll") {
         Ok(code) => Ok(Instruction::BuiltinDefinition(code)),
-        Err(_) => Err(IrError::BuiltinFileNotExist.into()),
+        Err(_) => Err(CompileError::BuiltinFileNotExist),
     }
 }
 
-/// # Errors
-pub fn generate_entry(main_value: Rc<Value>) -> Result<Rc<Instruction>, CompileError> {
+#[must_use]
+pub fn generate_entry(main_value: Rc<Value>) -> Rc<Instruction> {
     let template = Instruction::Definition(
         IrFunctionPrototype {
             function_type: Rc::new(IrType::Function {
@@ -52,5 +51,5 @@ pub fn generate_entry(main_value: Rc<Value>) -> Result<Rc<Instruction>, CompileE
             .into(),
         )),
     );
-    Ok(template.into())
+    template.into()
 }

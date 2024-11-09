@@ -5,8 +5,6 @@ use std::rc::Rc;
 
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::err::CompileError;
-use crate::compiler::syntax::err::ParseError;
-use crate::compiler::syntax::err::ParseErrorKind;
 use crate::util::common::Array;
 
 #[derive(Clone)]
@@ -91,10 +89,7 @@ impl TryFrom<String> for Type {
             "i32" => Ok(Type::Int(BitWidth::Bit32)),
             "i8" => Ok(Type::Int(BitWidth::Bit8)),
             "bool" => Ok(Type::Bool),
-            _ => Err(ParseError {
-                kind: ParseErrorKind::UnknownType(value),
-            }
-            .into()),
+            _ => Err(CompileError::UnknownType(value)),
         }
     }
 }

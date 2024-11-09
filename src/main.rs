@@ -14,7 +14,6 @@ use katastrophe::ir_translate;
 use katastrophe::mutability_check;
 use katastrophe::syntax_analyze;
 use katastrophe::type_infer;
-use katastrophe::util::reportable_error::Reportable;
 
 enum CommandError {
     MissingOutputFile,
@@ -26,7 +25,7 @@ enum CommandError {
     NoInputFile,
 }
 
-impl Reportable for CommandError {
+impl CommandError {
     fn report(&self) -> ! {
         match self {
             CommandError::MissingOutputFile => {

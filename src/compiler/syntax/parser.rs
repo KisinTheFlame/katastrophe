@@ -33,8 +33,6 @@ use super::ast::statement::Statement;
 use super::ast::statement::WhileDetail;
 use super::ast::ty::Type;
 use super::ast::Document;
-use super::err::ParseError;
-use super::err::ParseErrorKind;
 
 pub struct Parser {
     lexer: Lexer,
@@ -79,10 +77,7 @@ impl Parser {
         if self.expect_keyword(expected_keyword) {
             Ok(())
         } else {
-            Err(ParseError {
-                kind: ParseErrorKind::MissingKeyword(expected_keyword),
-            }
-            .into())
+            Err(CompileError::MissingKeyword(expected_keyword))
         }
     }
 
@@ -107,10 +102,7 @@ impl Parser {
         if self.expect_symbol(expected_symbol) {
             Ok(())
         } else {
-            Err(ParseError {
-                kind: ParseErrorKind::MissingSymbol(expected_symbol),
-            }
-            .into())
+            Err(CompileError::MissingSymbol(expected_symbol))
         }
     }
 
@@ -137,10 +129,7 @@ impl Parser {
             self.lexer.next();
             Ok(identifier)
         } else {
-            Err(ParseError {
-                kind: ParseErrorKind::MissingIdentifier,
-            }
-            .into())
+            Err(CompileError::MissingIdentifier)
         }
     }
 
@@ -183,10 +172,7 @@ impl Parser {
                 Symbol::LogicalNot => Unary::LogicalNot,
                 Symbol::BitNot => Unary::BitNot,
                 symbol => {
-                    return Err(ParseError {
-                        kind: ParseErrorKind::MissingSymbol(*symbol),
-                    }
-                    .into());
+                    return Err(CompileError::MissingSymbol(*symbol));
                 }
             };
             self.lexer.next();
@@ -197,11 +183,11 @@ impl Parser {
             ))
         } else {
             let kind = if let Some(token) = self.lexer.peek() {
-                ParseErrorKind::UnexpectedToken(token.clone())
+                CompileError::UnexpectedToken(token.clone())
             } else {
-                ParseErrorKind::UnexpectedEOF
+                CompileError::UnexpectedParseEOF
             };
-            Err(ParseError { kind }.into())
+            Err(kind)
         }
     }
 
@@ -228,10 +214,7 @@ impl Parser {
                 Ok(self.parse_parentheses_expression()?)
             }
             Some(_) => Ok(self.parse_unary_expression()?),
-            None => Err(ParseError {
-                kind: ParseErrorKind::UnexpectedEOF,
-            }
-            .into()),
+            None => Err(CompileError::UnexpectedParseEOF),
         }
     }
 
@@ -548,10 +531,7 @@ impl Parser {
         }
         self.digest_symbol(Symbol::Semicolon)?;
         let Some((item, path_nodes)) = path_nodes.split_last() else {
-            return Err(ParseError {
-                kind: ParseErrorKind::MissingIdentifier,
-            }
-            .into());
+            return Err(CompileError::MissingIdentifier);
         };
         let path_nodes = path_nodes.iter().cloned().map(Rc::new).collect();
         let document_path = Rc::new(DocumentPath(path_nodes));
@@ -580,10 +560,7 @@ impl Parser {
                 Ok(statement)
             }
             Some(_) => self.parse_expression_statement(),
-            None => Err(ParseError {
-                kind: ParseErrorKind::UnexpectedEOF,
-            }
-            .into()),
+            None => Err(CompileError::UnexpectedParseEOF),
         }
     }
 

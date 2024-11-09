@@ -24,9 +24,6 @@ use crate::compiler::syntax::ast::Document;
 use crate::sys_error;
 use crate::util::common::Array;
 
-use super::err::SemanticError;
-use super::err::TypeError;
-
 type TypeScope = Scope<Rc<Type>>;
 
 pub struct TypeInferrer {
@@ -51,8 +48,11 @@ impl TypeInferrer {
     ) -> Result<Rc<Type>, CompileError> {
         let (operator, left_type, right_type) = index;
         self.binary_operation_type_map.get(index).cloned().ok_or(
-            TypeError::UndefinedBinaryExpression(*operator, left_type.clone(), right_type.clone())
-                .into(),
+            CompileError::UndefinedBinaryExpression(
+                *operator,
+                left_type.clone(),
+                right_type.clone(),
+            ),
         )
     }
 
@@ -61,10 +61,9 @@ impl TypeInferrer {
         index: &(Unary, Rc<Type>),
     ) -> Result<Rc<Type>, CompileError> {
         let (operator, ty) = index;
-        self.unary_operation_type_map
-            .get(index)
-            .cloned()
-            .ok_or(TypeError::UndefinedUnaryExpression(*operator, ty.clone()).into())
+        self.unary_operation_type_map.get(index).cloned().ok_or(
+            CompileError::UndefinedUnaryExpression(*operator, ty.clone()),
+        )
     }
 
     fn infer_lvalue(
@@ -74,9 +73,9 @@ impl TypeInferrer {
         match lvalue.as_ref() {
             Expression::Identifier(identifier) => match self.scope.lookup(identifier)? {
                 Some(var_type) => Ok((var_type, Expression::Identifier(identifier.clone()).into())),
-                _ => Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into()),
+                _ => Err(CompileError::UndeclaredIdentifier(identifier.clone())),
             },
-            _ => Err(SemanticError::IllegalLValue.into()),
+            _ => Err(CompileError::IllegalLValue),
         }
     }
 
@@ -88,11 +87,10 @@ impl TypeInferrer {
         let (lvalue_type, lvalue) = self.infer_lvalue(lvalue)?;
         let (expression, expression_type) = self.infer_expression(expression)?;
         if *lvalue_type != *expression_type {
-            return Err(TypeError::AssignTypeMismatch {
+            return Err(CompileError::AssignTypeMismatch {
                 lvalue_type,
                 expression_type,
-            }
-            .into());
+            });
         }
         Ok(Expression::Binary(Binary::Assign, lvalue_type, lvalue, expression).into())
     }
@@ -105,7 +103,7 @@ impl TypeInferrer {
             Expression::Identifier(identifier) => {
                 let id_type = self.scope.lookup(identifier)?;
                 let Some(id_type) = id_type else {
-                    return Err(SemanticError::UndeclaredIdentifier(identifier.clone()).into());
+                    return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
                 };
                 (Expression::Identifier(identifier.clone()).into(), id_type)
             }
@@ -156,24 +154,23 @@ impl TypeInferrer {
                 let arguments: Array<Rc<Expression>> = arguments.into();
                 let argument_types: Array<Rc<Type>> = argument_types.into();
                 let Some(function_type) = self.scope.lookup(function_id)? else {
-                    return Err(SemanticError::UndeclaredIdentifier(function_id.clone()).into());
+                    return Err(CompileError::UndeclaredIdentifier(function_id.clone()));
                 };
                 let Type::Function {
                     return_type,
                     parameter_types,
                 } = function_type.as_ref()
                 else {
-                    return Err(TypeError::ShouldBeFunctionType.into());
+                    return Err(CompileError::ShouldBeFunctionType);
                 };
                 let result_type = if argument_types == *parameter_types {
                     return_type.clone()
                 } else {
-                    return Err(TypeError::CallArgumentTypesMismatch {
+                    return Err(CompileError::CallArgumentTypesMismatch {
                         function_id: function_id.clone(),
                         parameter_types: parameter_types.clone(),
                         argument_types,
-                    }
-                    .into());
+                    });
                 };
                 (
                     Expression::Call(function_id.clone(), arguments).into(),
@@ -185,11 +182,10 @@ impl TypeInferrer {
                 match (from_type.as_ref(), to_type.as_ref()) {
                     (Type::Int(_), Type::Int(_)) => {}
                     (_, _) => {
-                        return Err(TypeError::IllegalCast {
+                        return Err(CompileError::IllegalCast {
                             from_type,
                             to_type: to_type.clone(),
-                        }
-                        .into());
+                        });
                     }
                 }
                 (
@@ -219,16 +215,15 @@ impl TypeInferrer {
             parameter_types: _,
         } = function_type.as_ref()
         else {
-            return Err(TypeError::ShouldBeFunctionType.into());
+            return Err(CompileError::ShouldBeFunctionType);
         };
         if return_type == *expected_type {
             Ok(return_value)
         } else {
-            Err(TypeError::ReturnTypeMismatch {
+            Err(CompileError::ReturnTypeMismatch {
                 expected: expected_type.clone(),
                 returned: return_type,
-            }
-            .into())
+            })
         }
     }
 
@@ -243,7 +238,7 @@ impl TypeInferrer {
     ) -> Result<Statement, CompileError> {
         let (condition, condition_type) = self.infer_expression(condition)?;
         if *condition_type != Type::Bool {
-            return Err(TypeError::ConditionNeedBool.into());
+            return Err(CompileError::ConditionNeedBool);
         }
         self.scope.enter(Tag::Anonymous);
         let true_body = self.infer_statement(context, true_body)?;
@@ -271,7 +266,7 @@ impl TypeInferrer {
     ) -> Result<Statement, CompileError> {
         let (condition, condition_type) = self.infer_expression(condition)?;
         if *condition_type != Type::Bool {
-            return Err(TypeError::ConditionNeedBool.into());
+            return Err(CompileError::ConditionNeedBool);
         }
         self.scope.enter(Tag::Named("while"));
         let body = self.infer_statement(context, body)?;
@@ -289,11 +284,10 @@ impl TypeInferrer {
             _ => lvalue_type.clone(),
         };
         if lvalue_type != expression_type {
-            return Err(TypeError::AssignTypeMismatch {
+            return Err(CompileError::AssignTypeMismatch {
                 lvalue_type,
                 expression_type,
-            }
-            .into());
+            });
         }
         if self.scope.is_global()? {
             self.scope
@@ -325,7 +319,7 @@ impl TypeInferrer {
             parameter_types,
         } = function_type.as_ref()
         else {
-            return sys_error!("must be a function type.");
+            sys_error!("must be a function type.");
         };
         parameters
             .iter()
@@ -397,7 +391,7 @@ impl TypeInferrer {
                 let used_document_id = context.id_map.get(document_path).unwrap();
                 let type_map = context.type_map.get(used_document_id).unwrap();
                 let Some(symbol_type) = type_map.get(symbol) else {
-                    return sys_error!("used symbol must exist");
+                    sys_error!("used symbol must exist");
                 };
                 self.scope.declare(symbol.clone(), symbol_type.clone())?;
                 Statement::Using(UsingPath(document_path.clone(), symbol.clone()))
@@ -429,7 +423,7 @@ impl TypeInferrer {
                 | Statement::Return(_)
                 | Statement::Expression(_)
                 | Statement::If(_)
-                | Statement::While(_) => Err(TypeError::ProcessInGlobal.into()),
+                | Statement::While(_) => Err(CompileError::ProcessInGlobal),
                 Statement::Let(_) | Statement::Using(_) => Ok(()),
                 Statement::Define(define_detail) => {
                     self.pre_scan_function_prototype(&define_detail.prototype)
@@ -504,7 +498,7 @@ impl TypeInferrer {
     /// # Errors
     pub fn infer(&mut self, context: &mut Context, id: DocumentId) -> Result<(), CompileError> {
         let Some(document) = context.document_map.remove(&id) else {
-            return sys_error!("document must exist");
+            sys_error!("document must exist");
         };
         self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();

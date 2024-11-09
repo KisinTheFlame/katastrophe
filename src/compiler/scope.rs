@@ -3,12 +3,8 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
-use self::err::ScopeError;
-
 use super::err::CompileError;
 use super::syntax::ast::crumb::Identifier;
-
-mod err;
 
 pub enum Tag {
     Anonymous,
@@ -74,15 +70,14 @@ impl<T: Clone> Scope<T> {
 
     pub fn leave(&mut self, tag: Tag) -> Result<(), CompileError> {
         if self.current_layer.is_none() {
-            return Err(ScopeError::NullScope.into());
+            return Err(CompileError::NullScope);
         }
         let layer = self.current_layer.take().unwrap();
         if layer.tag != tag {
-            return Err(ScopeError::ScopeMismatch {
+            return Err(CompileError::ScopeMismatch {
                 expected: tag,
                 encountered: layer.tag,
-            }
-            .into());
+            });
         }
         self.current_layer = layer.outer;
         Ok(())
@@ -113,7 +108,7 @@ impl<T: Clone> Scope<T> {
     ) -> Result<S, CompileError> {
         self.current_layer
             .as_ref()
-            .map_or(Err(ScopeError::NullScope.into()), f)
+            .map_or(Err(CompileError::NullScope), f)
     }
 
     fn execute_mut<S>(
@@ -122,7 +117,7 @@ impl<T: Clone> Scope<T> {
     ) -> Result<S, CompileError> {
         self.current_layer
             .as_mut()
-            .map_or(Err(ScopeError::NullScope.into()), f)
+            .map_or(Err(CompileError::NullScope), f)
     }
 
     pub fn exist(&self, symbol: &String) -> Result<bool, CompileError> {
@@ -132,7 +127,7 @@ impl<T: Clone> Scope<T> {
     pub fn is_global(&self) -> Result<bool, CompileError> {
         self.current_layer
             .as_ref()
-            .map_or(Err(ScopeError::NullScope.into()), |layer| {
+            .map_or(Err(CompileError::NullScope), |layer| {
                 Ok(layer.tag == Tag::Global)
             })
     }
@@ -140,7 +135,7 @@ impl<T: Clone> Scope<T> {
     pub fn current_function(&self) -> Result<Rc<Identifier>, CompileError> {
         self.current_layer
             .as_ref()
-            .map_or(Err(ScopeError::NullScope.into()), |layer| {
+            .map_or(Err(CompileError::NullScope), |layer| {
                 layer.get_current_function_name()
             })
     }
@@ -181,7 +176,7 @@ impl<T: Clone> Layer<T> {
 
     pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
         if self.symbol_table.contains_key(&symbol) {
-            return Err(ScopeError::DuplicateIdentifierInSameScope(symbol.clone()).into());
+            return Err(CompileError::DuplicateIdentifierInSameScope(symbol.clone()));
         }
         self.symbol_table.insert(symbol, symbol_info);
         Ok(())
@@ -208,7 +203,7 @@ impl<T: Clone> Layer<T> {
         }
         self.outer
             .as_ref()
-            .map_or(Err(ScopeError::NotInFunction.into()), |outer| {
+            .map_or(Err(CompileError::NotInFunction), |outer| {
                 outer.get_current_function_name()
             })
     }
