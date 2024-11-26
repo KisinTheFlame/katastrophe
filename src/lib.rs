@@ -104,8 +104,6 @@ pub fn assemble(ir_code: String, output_path: String) {
     fs::write(&temp_ir_path, ir_code).expect("failed to open a temp ir file");
 
     let link_result = Command::new("clang")
-        .arg("-mllvm")
-        .arg("-opaque-pointers")
         .arg(&temp_ir_path)
         .arg("-o")
         .arg(output_path)
