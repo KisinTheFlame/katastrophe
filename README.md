@@ -13,42 +13,67 @@ To try out Katastrophe, here is an example code in Katastrophe. save it as a fil
 ```
 using std::io::getchar;
 using std::io::putchar;
+using std::process::exit;
 
-let newline as i32 = 10;
-let char_0 as i32 = 48;
-let char_9 as i32 = 57;
+def main() -> i32 {
+    let x = read_number();
+    print_number(fibonacci(x));
+    putchar('\n');
+    return 0;
+}
+
+def read_number() -> i32 {
+    let mut number = 0;
+    let mut x = getchar();
+    while x == ' ' || x == '\n' {
+        x = getchar();
+    }
+    let mut sign = 1;
+    if x == '-' {
+        sign = -1;
+        x = getchar();
+    }
+    while '0' <= x && x <= '9' {
+        number = number * 10 + (x - '0') as i32;
+        x = getchar();
+    }
+    return number * sign;
+}
 
 def print_number(x as i32) {
+    if x != 0 && x == -x {
+        # TODO: handle this
+        exit(1);
+    }
+
+    if x < 0 {
+        putchar('-');
+        print_number(-x);
+        return;
+    }
+
     if x <= 9 {
-        putchar(char_0 + x);
+        putchar('0' + x as i8);
         return;
     }
     print_number(x / 10);
-    putchar(char_0 + (x - x / 10 * 10));
+    putchar('0' + (x - x / 10 * 10) as i8);
 }
 
-def main() -> i32 {
-    # read number
-    let mut x as i32 = 0;
-    let mut c as i32 = getchar();
-    while c != newline {
-        if char_0 <= c && c <= char_9 {
-            x = x * 10 + (c - char_0);
-        } else {
-            return -1;
-        }
-        c = getchar();
+def fibonacci(x as i32) -> i32 {
+    if x < 0 {
+        exit(1);
     }
 
-    # print doubled x
-    x = 2 * x;
     if x == 0 {
-        putchar(char_0);
-    } else {
-        print_number(x);
+        return 0;
     }
-    putchar(10);
-    return 0;
+
+    if x == 1 {
+        return 1;
+    }
+
+    return fibonacci(x - 1) + fibonacci(x - 2);
 }
 
 ```
