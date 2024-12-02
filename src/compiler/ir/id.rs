@@ -1,6 +1,3 @@
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
-
 use crate::define_id_generator;
 
 define_id_generator!(anonymous, pub);
