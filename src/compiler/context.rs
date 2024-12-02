@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
 
 use crate::define_id_generator;
 
