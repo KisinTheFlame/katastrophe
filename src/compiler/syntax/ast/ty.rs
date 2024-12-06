@@ -15,7 +15,7 @@ pub enum Type {
     Bool,
     Function {
         return_type: Rc<Type>,
-        parameter_types: Array<Rc<Type>>,
+        parameter_types: Array<Type>,
     },
 }
 

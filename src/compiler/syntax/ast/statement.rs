@@ -29,7 +29,7 @@ pub struct DefineDetail {
 
 pub enum Statement {
     Empty,
-    Block(Array<Rc<Statement>>),
+    Block(Array<Statement>),
     Return(Option<Rc<Expression>>),
     Expression(Rc<Expression>),
     If(IfDetail),

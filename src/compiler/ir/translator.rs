@@ -252,7 +252,7 @@ impl Translator {
     fn translate_call_expression(
         &mut self,
         function_name: &Rc<String>,
-        arguments: &Array<Rc<Expression>>,
+        arguments: &Array<Expression>,
     ) -> Result<(Rc<Instruction>, Rc<Value>), CompileError> {
         let receiver = self.declare(DeclType::Anonymous)?;
         let Some((function_id, function_type)) = self.scope.lookup(function_name)? else {
