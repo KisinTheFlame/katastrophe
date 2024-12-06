@@ -6,6 +6,7 @@ use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
 use crate::compiler::scope::Tag;
+use crate::compiler::syntax::ast::Document;
 use crate::compiler::syntax::ast::crumb::FunctionPrototype;
 use crate::compiler::syntax::ast::crumb::Identifier;
 use crate::compiler::syntax::ast::crumb::Mutability;
@@ -14,16 +15,15 @@ use crate::compiler::syntax::ast::crumb::Variable;
 use crate::compiler::syntax::ast::expression::Expression;
 use crate::compiler::syntax::ast::operator::Binary;
 use crate::compiler::syntax::ast::operator::Unary;
-use crate::compiler::syntax::ast::package::get_builtin;
 use crate::compiler::syntax::ast::package::DocumentPath;
 use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::package::get_builtin;
 use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::IfDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
 use crate::compiler::syntax::ast::statement::Statement;
 use crate::compiler::syntax::ast::statement::WhileDetail;
 use crate::compiler::syntax::ast::ty::Type;
-use crate::compiler::syntax::ast::Document;
 use crate::sys_error;
 use crate::util::common::Array;
 
@@ -33,13 +33,13 @@ use super::id::next_global_id;
 use super::id::next_label_id;
 use super::id::next_parameter_id;
 use super::id::next_variable_id;
-use super::instruction::ir_type::IrType;
 use super::instruction::Comparator;
 use super::instruction::Instruction;
 use super::instruction::IrBinaryOpcode;
 use super::instruction::IrFunctionPrototype;
 use super::instruction::IrScope;
 use super::instruction::Value;
+use super::instruction::ir_type::IrType;
 
 pub struct Translator {
     document_path: Rc<DocumentPath>,
@@ -171,18 +171,11 @@ impl Translator {
             left,
             right,
         };
-        let instructions = [
-            left_instruction,
-            right_instruction,
-            operation_instruction.into(),
-        ];
+        let instructions = [left_instruction, right_instruction, operation_instruction.into()];
         Ok((Instruction::Batch(instructions.into()).into(), result))
     }
 
-    fn translate_lvalue_expression(
-        &mut self,
-        lvalue_expression: &Rc<Expression>,
-    ) -> Result<Rc<Value>, CompileError> {
+    fn translate_lvalue_expression(&mut self, lvalue_expression: &Rc<Expression>) -> Result<Rc<Value>, CompileError> {
         let Expression::Identifier(ref identifier) = **lvalue_expression else {
             sys_error!("should be inspected in type check.");
         };
@@ -351,9 +344,7 @@ impl Translator {
             Expression::Identifier(identifier) => self.scope.lookup(identifier)?.map_or_else(
                 || sys_error!("should be inspected in type checking."),
                 |(value, data_type)| match *value {
-                    Value::Register(_) | Value::Parameter(_) => {
-                        Ok((Instruction::NoOperation.into(), value))
-                    }
+                    Value::Register(_) | Value::Parameter(_) => Ok((Instruction::NoOperation.into(), value)),
                     Value::StackPointer(_) | Value::GlobalPointer(_) => {
                         let result = self.declare(DeclType::Anonymous)?;
                         let instruction = Instruction::Load {
@@ -366,38 +357,31 @@ impl Translator {
                     _ => panic!(),
                 },
             ),
-            Expression::IntLiteral(literal) => Ok((
-                Instruction::NoOperation.into(),
-                Value::ImmediateI32(*literal).into(),
-            )),
+            Expression::IntLiteral(literal) => {
+                Ok((Instruction::NoOperation.into(), Value::ImmediateI32(*literal).into()))
+            }
             Expression::CharLiteral(literal) => Ok((
                 Instruction::NoOperation.into(),
                 Value::ImmediateI8(*literal as i8).into(),
             )),
             Expression::FloatLiteral(_) => todo!(),
-            Expression::BoolLiteral(literal) => Ok((
-                Instruction::NoOperation.into(),
-                Value::ImmediateBool(*literal).into(),
-            )),
+            Expression::BoolLiteral(literal) => {
+                Ok((Instruction::NoOperation.into(), Value::ImmediateBool(*literal).into()))
+            }
             Expression::Unary(operator, sub_type, expression) => {
                 self.translate_unary_expression(*operator, sub_type.clone(), expression)
             }
             Expression::Binary(operator, child_type, left, right) => {
                 self.translate_binary_expression(*operator, child_type.clone(), left, right)
             }
-            Expression::Call(function_name, arguments) => {
-                self.translate_call_expression(function_name, arguments)
-            }
+            Expression::Call(function_name, arguments) => self.translate_call_expression(function_name, arguments),
             Expression::Cast(expression, from_type, to_type) => {
                 self.translate_cast_expression(expression, from_type, to_type)
             }
         }
     }
 
-    fn translate_expression_statement(
-        &mut self,
-        expression: &Rc<Expression>,
-    ) -> Result<Rc<Instruction>, CompileError> {
+    fn translate_expression_statement(&mut self, expression: &Rc<Expression>) -> Result<Rc<Instruction>, CompileError> {
         let (instruction, _) = self.translate_expression(expression)?;
         Ok(instruction)
     }
@@ -560,8 +544,7 @@ impl Translator {
                 }
             }
             (false, Mutability::Mutable) => {
-                let lvalue =
-                    self.declare(DeclType::Mutable(identifier.clone(), data_type.clone()))?;
+                let lvalue = self.declare(DeclType::Mutable(identifier.clone(), data_type.clone()))?;
                 Instruction::Batch(
                     [
                         Instruction::Allocate((lvalue.clone(), data_type.clone())).into(),
@@ -576,8 +559,7 @@ impl Translator {
                 )
             }
             (false, Mutability::Immutable) => {
-                let lvalue =
-                    self.declare(DeclType::Immutable(identifier.clone(), data_type.clone()))?;
+                let lvalue = self.declare(DeclType::Immutable(identifier.clone(), data_type.clone()))?;
                 Instruction::Copy {
                     data_type,
                     from: expression,
@@ -690,34 +672,24 @@ impl Translator {
         match statement {
             Statement::Empty => Ok(Instruction::NoOperation.into()),
             Statement::Block(statements) => self.translate_block_statement(context, statements),
-            Statement::Return(return_value) => {
-                self.translate_return_statement(return_value.clone())
-            }
+            Statement::Return(return_value) => self.translate_return_statement(return_value.clone()),
             Statement::Expression(expression) => self.translate_expression_statement(expression),
             Statement::If(if_detail) => self.translate_if_statement(context, if_detail),
             Statement::While(while_detail) => self.translate_while_statement(context, while_detail),
             Statement::Let(let_detail) => self.translate_let_statement(let_detail),
-            Statement::Define(define_detail) => {
-                self.translate_define_statement(context, define_detail)
-            }
+            Statement::Define(define_detail) => self.translate_define_statement(context, define_detail),
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let id = context.id_map.get(document_path).unwrap();
-                let Some((value, ir_type)) = context.ir_model_map.get(id).unwrap().get(symbol)
-                else {
+                let Some((value, ir_type)) = context.ir_model_map.get(id).unwrap().get(symbol) else {
                     sys_error!("used symbol must exist");
                 };
-                self.scope
-                    .declare(symbol.clone(), (value.clone(), ir_type.clone()))?;
+                self.scope.declare(symbol.clone(), (value.clone(), ir_type.clone()))?;
                 Ok(Instruction::NoOperation.into())
             }
         }
     }
 
-    fn translate_document(
-        &mut self,
-        context: &Context,
-        document: &Document,
-    ) -> Result<Rc<Instruction>, CompileError> {
+    fn translate_document(&mut self, context: &Context, document: &Document) -> Result<Rc<Instruction>, CompileError> {
         let instructions = document
             .statements
             .iter()
@@ -727,11 +699,7 @@ impl Translator {
     }
 
     /// # Errors
-    pub fn pre_scan_global(
-        &mut self,
-        context: &mut Context,
-        document_id: DocumentId,
-    ) -> Result<(), CompileError> {
+    pub fn pre_scan_global(&mut self, context: &mut Context, document_id: DocumentId) -> Result<(), CompileError> {
         self.scope.enter(Tag::Global);
         let Some(document) = context.document_map.get(&document_id) else {
             sys_error!("document must exist");
@@ -750,9 +718,7 @@ impl Translator {
                 Statement::Let(LetDetail(Variable(identifier, var_type, mutability), _)) => {
                     let data_type = Rc::new(IrType::from(var_type.clone()));
                     let value = match mutability {
-                        Mutability::Mutable => {
-                            self.declare(DeclType::Global(identifier.clone(), data_type.clone()))?
-                        }
+                        Mutability::Mutable => self.declare(DeclType::Global(identifier.clone(), data_type.clone()))?,
                         Mutability::Immutable => {
                             self.declare(DeclType::Constant(identifier.clone(), data_type.clone()))?
                         }
@@ -772,10 +738,7 @@ impl Translator {
                     } = prototype.as_ref();
 
                     let function_type = Rc::new(IrType::from(function_type.clone()));
-                    let value = self.declare(DeclType::Function(
-                        identifier.clone(),
-                        function_type.clone(),
-                    ))?;
+                    let value = self.declare(DeclType::Function(identifier.clone(), function_type.clone()))?;
                     ir_model_map.insert(identifier.clone(), (value, function_type));
                     Ok(())
                 }
@@ -786,11 +749,7 @@ impl Translator {
     }
 
     /// # Errors
-    pub fn translate(
-        &mut self,
-        context: &mut Context,
-        document_id: DocumentId,
-    ) -> Result<(), CompileError> {
+    pub fn translate(&mut self, context: &mut Context, document_id: DocumentId) -> Result<(), CompileError> {
         let Some(document) = context.document_map.get(&document_id) else {
             sys_error!("document must exist");
         };

@@ -86,10 +86,7 @@ impl Operator for Binary {
             Binary::Multiply | Binary::Divide => 13u8,
             Binary::Add | Binary::Subtract => 12u8,
             Binary::LeftShift | Binary::RightShift => 11u8,
-            Binary::LessThan
-            | Binary::LessThanEqual
-            | Binary::GreaterThan
-            | Binary::GreaterThanEqual => 10u8,
+            Binary::LessThan | Binary::LessThanEqual | Binary::GreaterThan | Binary::GreaterThanEqual => 10u8,
             Binary::Equal | Binary::NotEqual => 9u8,
             Binary::BitAnd => 8u8,
             Binary::BitOr => 6u8,

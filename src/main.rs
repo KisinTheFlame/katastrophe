@@ -79,9 +79,7 @@ struct ArgHandler {
 
 impl ArgHandler {
     pub fn new(args: Args) -> ArgHandler {
-        ArgHandler {
-            args: args.peekable(),
-        }
+        ArgHandler { args: args.peekable() }
     }
 
     fn next_else(&mut self, error: CommandError) -> Result<String, CommandError> {

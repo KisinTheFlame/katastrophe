@@ -5,11 +5,11 @@ use crate::define_id_generator;
 
 use super::ir::instruction::Instruction;
 use super::ir::instruction::IrModel;
+use super::syntax::ast::Document;
 use super::syntax::ast::crumb::Identifier;
 use super::syntax::ast::crumb::Mutability;
 use super::syntax::ast::package::DocumentPath;
 use super::syntax::ast::ty::Type;
-use super::syntax::ast::Document;
 
 pub type DocumentId = u32;
 

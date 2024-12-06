@@ -27,17 +27,11 @@ pub struct MutabilityChecker {
 impl MutabilityChecker {
     #[must_use]
     pub fn new() -> MutabilityChecker {
-        MutabilityChecker {
-            scope: Scope::new(),
-        }
+        MutabilityChecker { scope: Scope::new() }
     }
 
     /// # Errors
-    pub fn check_document(
-        &mut self,
-        context: &Context,
-        document_id: DocumentId,
-    ) -> Result<(), CompileError> {
+    pub fn check_document(&mut self, context: &Context, document_id: DocumentId) -> Result<(), CompileError> {
         let Some(document) = context.document_map.get(&document_id) else {
             sys_error!("document must exist");
         };
@@ -50,11 +44,7 @@ impl MutabilityChecker {
         Ok(())
     }
 
-    fn check_statement(
-        &mut self,
-        context: &Context,
-        statement: &Statement,
-    ) -> Result<(), CompileError> {
+    fn check_statement(&mut self, context: &Context, statement: &Statement) -> Result<(), CompileError> {
         match statement {
             Statement::Empty | Statement::Return(_) => Ok(()),
             Statement::Block(statements) => statements
@@ -79,8 +69,7 @@ impl MutabilityChecker {
                     .iter()
                     .map(Rc::as_ref)
                     .try_for_each(|Parameter(parameter_id)| {
-                        self.scope
-                            .declare(parameter_id.clone(), Mutability::Immutable)
+                        self.scope.declare(parameter_id.clone(), Mutability::Immutable)
                     })?;
                 self.check_statement(context, body)?;
                 self.scope.leave(Tag::Function(identifier.clone()))?;

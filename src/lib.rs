@@ -31,8 +31,7 @@ pub fn syntax_analyze(context: &mut Context, code: &str) -> Result<u32, CompileE
 /// # Errors
 pub fn type_infer(context: &mut Context, ids: &Array<u32>) -> Result<(), CompileError> {
     let mut type_inferrer = TypeInferrer::new();
-    ids.iter()
-        .try_for_each(|id| type_inferrer.infer(context, *id))?;
+    ids.iter().try_for_each(|id| type_inferrer.infer(context, *id))?;
     Ok(())
 }
 
@@ -65,11 +64,7 @@ pub fn ir_translate(context: &mut Context, ids: &Array<u32>) -> Result<(), Compi
 
 /// # Errors
 /// # Panics
-pub fn ir_generate(
-    context: &Context,
-    ids: &Array<u32>,
-    main_document_id: u32,
-) -> Result<String, CompileError> {
+pub fn ir_generate(context: &Context, ids: &Array<u32>, main_document_id: u32) -> Result<String, CompileError> {
     let ir = ids
         .iter()
         .map(|id| {

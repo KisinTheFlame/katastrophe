@@ -24,9 +24,7 @@ impl Eq for Type {}
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Type::Unknown, Type::Unknown)
-            | (Type::Never, Type::Never)
-            | (Type::Bool, Type::Bool) => true,
+            (Type::Unknown, Type::Unknown) | (Type::Never, Type::Never) | (Type::Bool, Type::Bool) => true,
             (Type::Int(w1), Type::Int(w2)) => w1 == w2,
             (
                 Type::Function {

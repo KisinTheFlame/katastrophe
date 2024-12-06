@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use rand::distributions::Alphanumeric;
 use rand::Rng;
+use rand::distributions::Alphanumeric;
 
 use crate::constants::common::TMP;
 

@@ -2,8 +2,8 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::util::common::Array;
-use crate::util::pretty_format::indent;
 use crate::util::pretty_format::PrettyFormat;
+use crate::util::pretty_format::indent;
 
 use super::crumb::FunctionPrototype;
 use super::crumb::Variable;
@@ -51,9 +51,7 @@ impl PrettyFormat for Statement {
             }
             Statement::Return(expression) => {
                 writeln!(f, "{indent}Return")?;
-                expression
-                    .as_ref()
-                    .map(|e| e.pretty_format(f, indentation_num + 1));
+                expression.as_ref().map(|e| e.pretty_format(f, indentation_num + 1));
             }
             Statement::Expression(expression) => {
                 expression.pretty_format(f, indentation_num)?;
@@ -108,10 +106,7 @@ impl PrettyFormat for Statement {
                     .collect::<Vec<_>>()
                     .join(", ");
                 let builtin = if *builtin { "builtin " } else { "" };
-                writeln!(
-                    f,
-                    "{indent}Define {builtin}{identifier}({parameters}) -> {return_type}"
-                )?;
+                writeln!(f, "{indent}Define {builtin}{identifier}({parameters}) -> {return_type}")?;
                 body.pretty_format(f, indentation_num + 1)?;
             }
             Statement::Using(path) => {
