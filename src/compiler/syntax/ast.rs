@@ -1,7 +1,6 @@
 use core::fmt;
 
 use std::fmt::Display;
-use std::rc::Rc;
 
 use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
@@ -16,7 +15,7 @@ pub mod statement;
 pub mod ty;
 
 pub struct Document {
-    pub statements: Array<Rc<Statement>>,
+    pub statements: Array<Statement>,
 }
 
 impl PrettyFormat for Document {

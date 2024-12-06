@@ -130,8 +130,8 @@ pub enum Instruction {
         return_type: Rc<IrType>,
         value: Rc<Value>,
     },
-    Batch(Array<Rc<Instruction>>),
-    Definition(IrFunctionPrototype, Array<Rc<Value>>, Rc<Instruction>),
+    Batch(Array<Instruction>),
+    Definition(IrFunctionPrototype, Array<Value>, Rc<Instruction>),
     BuiltinDefinition(String),
     Binary {
         operator: IrBinaryOpcode,
@@ -171,7 +171,7 @@ pub enum Instruction {
     Call {
         receiver: Option<Rc<Value>>,
         function: IrFunctionPrototype,
-        arguments: Array<Rc<Value>>,
+        arguments: Array<Value>,
     },
     Label(Rc<Value>),
     Jump(Rc<Value>),

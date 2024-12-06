@@ -13,7 +13,7 @@ pub enum IrType {
     Bool,
     Function {
         return_type: Rc<IrType>,
-        parameter_types: Array<Rc<IrType>>,
+        parameter_types: Array<IrType>,
     },
 }
 

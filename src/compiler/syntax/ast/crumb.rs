@@ -20,7 +20,7 @@ impl Display for Parameter {
 
 pub struct FunctionPrototype {
     pub identifier: Rc<Identifier>,
-    pub parameters: Array<Rc<Parameter>>,
+    pub parameters: Array<Parameter>,
     pub function_type: Rc<Type>,
 }
 

@@ -42,7 +42,7 @@ pub struct Parser {
     scope: Scope<()>,
 }
 
-type TypedParameters = (Array<Rc<Parameter>>, Array<Rc<Type>>);
+type TypedParameters = (Array<Parameter>, Array<Type>);
 
 impl Parser {
     #[must_use]
@@ -106,7 +106,7 @@ impl Parser {
         }
     }
 
-    fn parse_function_call_args(&mut self) -> Result<Array<Rc<Expression>>, CompileError> {
+    fn parse_function_call_args(&mut self) -> Result<Array<Expression>, CompileError> {
         self.digest_symbol(Symbol::LeftParentheses)?;
         if self.expect_symbol(Symbol::RightParentheses) {
             return Ok([].into());

@@ -14,7 +14,7 @@ use super::crumb::Identifier;
 pub type PathNode = String;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct DocumentPath(pub Array<Rc<PathNode>>);
+pub struct DocumentPath(pub Array<PathNode>);
 
 impl DocumentPath {
     pub fn to_dir(&self) -> String {

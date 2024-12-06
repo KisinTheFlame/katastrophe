@@ -131,8 +131,8 @@ impl TypeInferrer {
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .unzip::<_, _, Vec<_>, Vec<_>>();
-                let arguments: Array<Rc<Expression>> = arguments.into();
-                let argument_types: Array<Rc<Type>> = argument_types.into();
+                let arguments: Array<Expression> = arguments.into();
+                let argument_types: Array<Type> = argument_types.into();
                 let Some(function_type) = self.scope.lookup(function_id)? else {
                     return Err(CompileError::UndeclaredIdentifier(function_id.clone()));
                 };

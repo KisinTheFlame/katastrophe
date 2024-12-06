@@ -61,8 +61,8 @@ pub enum CompileError {
     },
     CallArgumentTypesMismatch {
         function_id: Rc<Identifier>,
-        parameter_types: Array<Rc<Type>>,
-        argument_types: Array<Rc<Type>>,
+        parameter_types: Array<Type>,
+        argument_types: Array<Type>,
     },
     IllegalCast {
         from_type: Rc<Type>,

@@ -24,7 +24,7 @@ pub enum Expression {
     Unary(Unary, Rc<Type>, Rc<Expression>),
     Binary(Binary, Rc<Type>, Rc<Expression>, Rc<Expression>),
 
-    Call(Rc<Identifier>, Array<Rc<Expression>>),
+    Call(Rc<Identifier>, Array<Expression>),
 
     Cast(Rc<Expression>, Rc<Type>, Rc<Type>),
 }
