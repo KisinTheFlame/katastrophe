@@ -93,8 +93,7 @@ impl CompileError {
     pub fn report(self) -> ! {
         match self {
             // Lex Errors
-            CompileError::IllegalIntegerLiteral(ref s)
-            | CompileError::IllegalFloatLiteral(ref s) => {
+            CompileError::IllegalIntegerLiteral(ref s) | CompileError::IllegalFloatLiteral(ref s) => {
                 panic!("encountering illegal literal: {s}")
             }
             CompileError::IllegalEscapeChar(c) => {
@@ -210,10 +209,7 @@ impl CompileError {
             CompileError::NullScope => {
                 panic!("null scope.");
             }
-            CompileError::ScopeMismatch {
-                expected,
-                encountered,
-            } => {
+            CompileError::ScopeMismatch { expected, encountered } => {
                 panic!("scope mismatch. expected {expected}, encountered {encountered}.");
             }
             CompileError::DuplicateIdentifierInSameScope(identifier) => {

@@ -4,10 +4,10 @@ use std::rc::Rc;
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::err::CompileError;
 
-use super::instruction::ir_type::IrType;
 use super::instruction::Instruction;
 use super::instruction::IrFunctionPrototype;
 use super::instruction::Value;
+use super::instruction::ir_type::IrType;
 
 /// # Errors
 pub fn generate_libc_function() -> Result<Instruction, CompileError> {

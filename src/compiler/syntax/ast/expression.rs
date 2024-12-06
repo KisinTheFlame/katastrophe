@@ -3,8 +3,8 @@ use std::fmt::{self};
 use std::rc::Rc;
 
 use crate::util::common::Array;
-use crate::util::pretty_format::indent;
 use crate::util::pretty_format::PrettyFormat;
+use crate::util::pretty_format::indent;
 
 use crate::compiler::syntax::ast::ty::Type;
 

@@ -19,24 +19,14 @@ pub struct DocumentPath(pub Array<Rc<PathNode>>);
 impl DocumentPath {
     pub fn to_dir(&self) -> String {
         let DocumentPath(path_nodes) = self;
-        path_nodes
-            .iter()
-            .map(Rc::as_ref)
-            .cloned()
-            .collect::<Rc<_>>()
-            .join("/")
+        path_nodes.iter().map(Rc::as_ref).cloned().collect::<Rc<_>>().join("/")
     }
 }
 
 impl Display for DocumentPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let DocumentPath(path_nodes) = self;
-        let formatted = path_nodes
-            .iter()
-            .map(Rc::as_ref)
-            .cloned()
-            .collect::<Rc<_>>()
-            .join("::");
+        let formatted = path_nodes.iter().map(Rc::as_ref).cloned().collect::<Rc<_>>().join("::");
         write!(f, "{formatted}")
     }
 }
@@ -51,10 +41,7 @@ impl Display for UsingPath {
 }
 
 /// # Errors
-pub fn load_package_path(
-    context: &mut Context,
-    path: Rc<DocumentPath>,
-) -> Result<(), CompileError> {
+pub fn load_package_path(context: &mut Context, path: Rc<DocumentPath>) -> Result<(), CompileError> {
     if context.id_map.contains_key(&path) {
         return Ok(());
     }

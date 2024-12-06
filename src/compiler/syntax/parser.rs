@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
 
-use crate::compiler::context::next_document_id;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
+use crate::compiler::context::next_document_id;
 use crate::compiler::err::CompileError;
 use crate::compiler::lexis::lexer::Lexer;
 use crate::compiler::lexis::token::Keyword;
@@ -15,6 +15,7 @@ use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::package::load_package_path;
 use crate::util::common::Array;
 
+use super::ast::Document;
 use super::ast::crumb::FunctionPrototype;
 use super::ast::crumb::Identifier;
 use super::ast::crumb::Mutability;
@@ -32,7 +33,6 @@ use super::ast::statement::LetDetail;
 use super::ast::statement::Statement;
 use super::ast::statement::WhileDetail;
 use super::ast::ty::Type;
-use super::ast::Document;
 
 pub struct Parser {
     lexer: Lexer,
@@ -136,10 +136,7 @@ impl Parser {
     fn parse_identifier(&mut self) -> Result<Expression, CompileError> {
         let identifier = self.parse_plain_identifier()?;
         if self.match_symbol(Symbol::LeftParentheses) {
-            Ok(Expression::Call(
-                identifier.into(),
-                self.parse_function_call_args()?,
-            ))
+            Ok(Expression::Call(identifier.into(), self.parse_function_call_args()?))
         } else {
             Ok(Expression::Identifier(identifier.into()))
         }
@@ -210,9 +207,7 @@ impl Parser {
                 let literal = *literal;
                 Ok(self.parse_bool_literal(literal))
             }
-            Some(Token::Symbol(Symbol::LeftParentheses)) => {
-                Ok(self.parse_parentheses_expression()?)
-            }
+            Some(Token::Symbol(Symbol::LeftParentheses)) => Ok(self.parse_parentheses_expression()?),
             Some(_) => Ok(self.parse_unary_expression()?),
             None => Err(CompileError::UnexpectedParseEOF),
         }
@@ -310,12 +305,7 @@ impl Parser {
                 rhs
             };
 
-            lhs = Expression::Binary(
-                current_operator,
-                Type::Unknown.into(),
-                Rc::new(lhs),
-                Rc::new(rhs),
-            );
+            lhs = Expression::Binary(current_operator, Type::Unknown.into(), Rc::new(lhs), Rc::new(rhs));
         }
     }
 
@@ -373,10 +363,7 @@ impl Parser {
         })
     }
 
-    fn parse_while_statement(
-        &mut self,
-        context: &mut Context,
-    ) -> Result<WhileDetail, CompileError> {
+    fn parse_while_statement(&mut self, context: &mut Context) -> Result<WhileDetail, CompileError> {
         self.digest_keyword(Keyword::While)?;
         let condition = self.parse_expression()?.into();
         let body = self.parse_block_statement(context)?.into();
@@ -461,10 +448,7 @@ impl Parser {
         })
     }
 
-    fn parse_define_statement(
-        &mut self,
-        context: &mut Context,
-    ) -> Result<DefineDetail, CompileError> {
+    fn parse_define_statement(&mut self, context: &mut Context) -> Result<DefineDetail, CompileError> {
         self.digest_keyword(Keyword::Define)?;
         let builtin = self.expect_keyword(Keyword::Builtin);
         let prototype = self.parse_function_prototype()?;
@@ -472,8 +456,7 @@ impl Parser {
         if self.scope.is_global()? {
             let function_type = prototype.function_type.clone();
             self.type_map.insert(identifier.clone(), function_type);
-            self.mutability_map
-                .insert(identifier.clone(), Mutability::Immutable);
+            self.mutability_map.insert(identifier.clone(), Mutability::Immutable);
         }
         self.scope.enter(Tag::Function(identifier.clone()));
         let body = self.parse_block_statement(context)?.into();
@@ -506,10 +489,7 @@ impl Parser {
             self.type_map.insert(lvalue.clone(), lvalue_type.clone());
             self.mutability_map.insert(lvalue.clone(), mutability);
         }
-        Ok(LetDetail(
-            Variable(lvalue, lvalue_type, mutability),
-            expression.into(),
-        ))
+        Ok(LetDetail(Variable(lvalue, lvalue_type, mutability), expression.into()))
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement, CompileError> {
@@ -543,16 +523,10 @@ impl Parser {
     fn parse_statement(&mut self, context: &mut Context) -> Result<Statement, CompileError> {
         match self.lexer.peek() {
             Some(Token::Keyword(Keyword::Return)) => self.parse_return_statement(),
-            Some(Token::Keyword(Keyword::If)) => {
-                Ok(Statement::If(self.parse_if_statement(context)?))
-            }
-            Some(Token::Keyword(Keyword::While)) => {
-                Ok(Statement::While(self.parse_while_statement(context)?))
-            }
+            Some(Token::Keyword(Keyword::If)) => Ok(Statement::If(self.parse_if_statement(context)?)),
+            Some(Token::Keyword(Keyword::While)) => Ok(Statement::While(self.parse_while_statement(context)?)),
             Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(context),
-            Some(Token::Keyword(Keyword::Define)) => {
-                Ok(Statement::Define(self.parse_define_statement(context)?))
-            }
+            Some(Token::Keyword(Keyword::Define)) => Ok(Statement::Define(self.parse_define_statement(context)?)),
             Some(Token::Keyword(Keyword::Let)) => Ok(Statement::Let(self.parse_let_statement()?)),
             Some(Token::Symbol(Symbol::Semicolon)) => self.parse_empty_statement(),
             Some(Token::Keyword(Keyword::Using)) => {
@@ -582,9 +556,7 @@ impl Parser {
         };
         context.document_map.insert(id, document);
         context.type_map.insert(id, mem::take(&mut self.type_map));
-        context
-            .mutability_map
-            .insert(id, mem::take(&mut self.mutability_map));
+        context.mutability_map.insert(id, mem::take(&mut self.mutability_map));
         Ok(id)
     }
 }

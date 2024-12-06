@@ -58,9 +58,7 @@ pub struct Scope<T: Clone> {
 
 impl<T: Clone> Scope<T> {
     pub fn new() -> Scope<T> {
-        Scope {
-            current_layer: None,
-        }
+        Scope { current_layer: None }
     }
 
     pub fn enter(&mut self, tag: Tag) {
@@ -87,11 +85,7 @@ impl<T: Clone> Scope<T> {
         self.execute_mut(|layer| layer.declare(symbol, symbol_info))
     }
 
-    pub fn overwrite(
-        &mut self,
-        symbol: Rc<Identifier>,
-        symbol_info: T,
-    ) -> Result<(), CompileError> {
+    pub fn overwrite(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
         self.execute_mut(|layer| {
             layer.overwrite(symbol, symbol_info);
             Ok(())
@@ -102,22 +96,15 @@ impl<T: Clone> Scope<T> {
         self.execute(|layer| Ok(layer.lookup(symbol)))
     }
 
-    fn execute<S>(
-        &self,
-        f: impl FnOnce(&Box<Layer<T>>) -> Result<S, CompileError>,
-    ) -> Result<S, CompileError> {
-        self.current_layer
-            .as_ref()
-            .map_or(Err(CompileError::NullScope), f)
+    fn execute<S>(&self, f: impl FnOnce(&Box<Layer<T>>) -> Result<S, CompileError>) -> Result<S, CompileError> {
+        self.current_layer.as_ref().map_or(Err(CompileError::NullScope), f)
     }
 
     fn execute_mut<S>(
         &mut self,
         f: impl FnOnce(&mut Box<Layer<T>>) -> Result<S, CompileError>,
     ) -> Result<S, CompileError> {
-        self.current_layer
-            .as_mut()
-            .map_or(Err(CompileError::NullScope), f)
+        self.current_layer.as_mut().map_or(Err(CompileError::NullScope), f)
     }
 
     pub fn exist(&self, symbol: &String) -> Result<bool, CompileError> {
@@ -127,17 +114,13 @@ impl<T: Clone> Scope<T> {
     pub fn is_global(&self) -> Result<bool, CompileError> {
         self.current_layer
             .as_ref()
-            .map_or(Err(CompileError::NullScope), |layer| {
-                Ok(layer.tag == Tag::Global)
-            })
+            .map_or(Err(CompileError::NullScope), |layer| Ok(layer.tag == Tag::Global))
     }
 
     pub fn current_function(&self) -> Result<Rc<Identifier>, CompileError> {
         self.current_layer
             .as_ref()
-            .map_or(Err(CompileError::NullScope), |layer| {
-                layer.get_current_function_name()
-            })
+            .map_or(Err(CompileError::NullScope), |layer| layer.get_current_function_name())
     }
 }
 
@@ -201,11 +184,9 @@ impl<T: Clone> Layer<T> {
         if let Tag::Function(name) = &self.tag {
             return Ok(name.clone());
         }
-        self.outer
-            .as_ref()
-            .map_or(Err(CompileError::NotInFunction), |outer| {
-                outer.get_current_function_name()
-            })
+        self.outer.as_ref().map_or(Err(CompileError::NotInFunction), |outer| {
+            outer.get_current_function_name()
+        })
     }
 }
 

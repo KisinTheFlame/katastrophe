@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use crate::compiler::scope::Scope;
 use crate::util::common::Array;
-use crate::util::pretty_format::indent;
 use crate::util::pretty_format::PrettyFormat;
+use crate::util::pretty_format::indent;
 
 use self::ir_type::IrType;
 
@@ -185,9 +185,7 @@ pub enum Instruction {
 
 impl Instruction {
     fn format_definition(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
-        let Instruction::Definition(IrFunctionPrototype { function_type, id }, parameters, body) =
-            self
-        else {
+        let Instruction::Definition(IrFunctionPrototype { function_type, id }, parameters, body) = self else {
             return Err(fmt::Error);
         };
         let IrType::Function {
@@ -242,19 +240,11 @@ impl Instruction {
             .join(", ");
 
         let indentation = indent(indentation_num);
-        writeln!(
-            f,
-            "{indentation}{receiver}call {return_type} {id}({arguments})"
-        )
+        writeln!(f, "{indentation}{receiver}call {return_type} {id}({arguments})")
     }
 
     fn format_copy(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
-        let Instruction::Copy {
-            data_type,
-            from,
-            to,
-        } = &self
-        else {
+        let Instruction::Copy { data_type, from, to } = &self else {
             return Err(fmt::Error);
         };
         let from_value = from.clone();
@@ -313,10 +303,7 @@ impl PrettyFormat for Instruction {
                 left,
                 right,
             } => {
-                writeln!(
-                    f,
-                    "{indentation}{result} = {operator} {data_type} {left}, {right}"
-                )
+                writeln!(f, "{indentation}{result} = {operator} {data_type} {left}, {right}")
             }
             Instruction::Copy {
                 data_type: _,
@@ -351,18 +338,10 @@ impl PrettyFormat for Instruction {
             Instruction::Allocate((pointer, data_type)) => {
                 writeln!(f, "{indentation}{pointer} = alloca {data_type}")
             }
-            Instruction::Load {
-                data_type,
-                from,
-                to,
-            } => {
+            Instruction::Load { data_type, from, to } => {
                 writeln!(f, "{indentation}{to} = load {data_type}, ptr {from}")
             }
-            Instruction::Store {
-                data_type,
-                from,
-                to,
-            } => {
+            Instruction::Store { data_type, from, to } => {
                 writeln!(f, "{indentation}store {data_type} {from}, ptr {to}")
             }
             Instruction::Call {

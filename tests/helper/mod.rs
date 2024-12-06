@@ -51,9 +51,7 @@ fn test_output(source_code: &str, expected: String) {
     execute(|| {
         let path = compile(source_code)?;
 
-        let output = Command::new(path)
-            .output()
-            .expect("Test code compile failed.");
+        let output = Command::new(path).output().expect("Test code compile failed.");
         let output = String::from_utf8(output.stdout).unwrap();
         assert_eq!(output, expected);
 
