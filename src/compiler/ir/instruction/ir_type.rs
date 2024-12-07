@@ -3,6 +3,8 @@ use std::fmt::{self};
 use std::rc::Rc;
 
 use crate::compiler::bit_width::BitWidth;
+use crate::compiler::context::StructId;
+use crate::compiler::syntax::ast::crumb::{Field, Identifier};
 use crate::compiler::syntax::ast::ty::Type;
 use crate::util::common::Array;
 
@@ -14,6 +16,11 @@ pub enum IrType {
     Function {
         return_type: Rc<IrType>,
         parameter_types: Array<IrType>,
+    },
+    Struct {
+        id: StructId,
+        name: Rc<Identifier>,
+        field_types: Array<IrType>,
     },
 }
 
@@ -41,6 +48,18 @@ impl From<&Type> for IrType {
                     .map(Rc::new)
                     .collect(),
             },
+            Type::Struct { id, name, fields } => IrType::Struct {
+                id: *id,
+                name: name.clone(),
+                field_types: fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|Field(_, field_type)| field_type)
+                    .map(Rc::as_ref)
+                    .map(IrType::from)
+                    .map(Rc::from)
+                    .collect(),
+            },
             Type::Unknown => unimplemented!(),
         }
     }
@@ -56,6 +75,11 @@ impl Display for IrType {
                 return_type: _,
                 parameter_types: _,
             } => panic!("should never print function type"),
+            IrType::Struct {
+                id,
+                name,
+                field_types: _,
+            } => write!(f, "%s{id}.{name}"),
         }
     }
 }

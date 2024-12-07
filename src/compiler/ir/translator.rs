@@ -22,6 +22,7 @@ use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::IfDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
 use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::StructDetail;
 use crate::compiler::syntax::ast::statement::WhileDetail;
 use crate::compiler::syntax::ast::ty::Type;
 use crate::sys_error;
@@ -622,7 +623,9 @@ impl Translator {
         };
         if *builtin {
             let Some(ir_code) = get_builtin(&self.document_path, identifier, &function) else {
-                return Err(CompileError::BuiltinFunctionFileNotExist(identifier.clone()));
+                return Err(CompileError::BuiltinFunctionFileNotExist(
+                    identifier.clone(),
+                ));
             };
             return Ok(Instruction::BuiltinDefinition(ir_code).into());
         }
@@ -686,6 +689,7 @@ impl Translator {
                 self.scope.declare(symbol.clone(), (value.clone(), ir_type.clone()))?;
                 Ok(Instruction::NoOperation.into())
             }
+            Statement::Struct(StructDetail { name, fields }) => todo!(),
         }
     }
 
@@ -743,6 +747,7 @@ impl Translator {
                     Ok(())
                 }
                 Statement::Using(_) => Ok(()),
+                Statement::Struct(StructDetail { name, fields }) => todo!(),
             })?;
         context.ir_model_map.insert(document_id, ir_model_map);
         Ok(())

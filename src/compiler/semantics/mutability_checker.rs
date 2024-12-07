@@ -46,7 +46,7 @@ impl MutabilityChecker {
 
     fn check_statement(&mut self, context: &Context, statement: &Statement) -> Result<(), CompileError> {
         match statement {
-            Statement::Empty | Statement::Return(_) => Ok(()),
+            Statement::Empty | Statement::Return(_) | Statement::Struct(_) => Ok(()),
             Statement::Block(statements) => statements
                 .iter()
                 .try_for_each(|statement| self.check_statement(context, statement)),

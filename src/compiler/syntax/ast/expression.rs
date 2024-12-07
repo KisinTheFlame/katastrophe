@@ -27,6 +27,8 @@ pub enum Expression {
     Call(Rc<Identifier>, Array<Expression>),
 
     Cast(Rc<Expression>, Rc<Type>, Rc<Type>),
+
+    StructSpawn(Rc<Identifier>, Array<(Rc<Identifier>, Rc<Expression>)>),
 }
 
 impl PrettyFormat for Expression {
@@ -67,6 +69,7 @@ impl PrettyFormat for Expression {
                 writeln!(f, "{indentation}As from {from_type} to {to_type}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }
+            Expression::StructSpawn(name, fields) => todo!(),
         }
         Ok(())
     }

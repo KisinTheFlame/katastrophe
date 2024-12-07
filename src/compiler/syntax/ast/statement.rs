@@ -5,7 +5,9 @@ use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
 use crate::util::pretty_format::indent;
 
+use super::crumb::Field;
 use super::crumb::FunctionPrototype;
+use super::crumb::Identifier;
 use super::crumb::Variable;
 use super::expression::Expression;
 use super::package::UsingPath;
@@ -27,6 +29,11 @@ pub struct DefineDetail {
     pub body: Rc<Statement>,
 }
 
+pub struct StructDetail {
+    pub name: Rc<Identifier>,
+    pub fields: Array<Field>
+}
+
 pub enum Statement {
     Empty,
     Block(Array<Statement>),
@@ -37,6 +44,7 @@ pub enum Statement {
     While(WhileDetail),
     Define(DefineDetail),
     Using(UsingPath),
+    Struct(StructDetail),
 }
 
 impl PrettyFormat for Statement {
@@ -112,6 +120,7 @@ impl PrettyFormat for Statement {
             Statement::Using(path) => {
                 writeln!(f, "{indent}Using {path}")?;
             }
+            Statement::Struct(struct_detail) => todo!("statement struct"),
         };
         Ok(())
     }

@@ -12,6 +12,7 @@ use super::syntax::ast::package::DocumentPath;
 use super::syntax::ast::reference::Reference;
 
 pub type DocumentId = u32;
+pub type StructId = u32;
 
 pub struct Context {
     pub id_map: HashMap<Rc<DocumentPath>, DocumentId>,
@@ -45,3 +46,4 @@ impl Default for Context {
 }
 
 define_id_generator!(document, pub);
+define_id_generator!(struct, pub);

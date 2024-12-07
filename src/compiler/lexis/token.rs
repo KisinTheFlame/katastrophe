@@ -13,6 +13,7 @@ pub enum Keyword {
     As,
     Mut,
     Builtin,
+    Struct,
 }
 
 static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
@@ -28,6 +29,7 @@ static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
             ("as", Keyword::As),
             ("mut", Keyword::Mut),
             ("builtin", Keyword::Builtin),
+            ("struct", Keyword::Struct),
         ]
         .map(|(s, k)| (s, k)),
     )
