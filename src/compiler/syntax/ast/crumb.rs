@@ -40,3 +40,5 @@ impl Display for Mutability {
 }
 
 pub struct Variable(pub Rc<Identifier>, pub Rc<Type>, pub Mutability);
+
+pub struct Field(pub Rc<Identifier>, pub Rc<Type>);

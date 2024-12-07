@@ -15,10 +15,12 @@ use crate::compiler::syntax::ast::expression::Expression;
 use crate::compiler::syntax::ast::operator::Binary;
 use crate::compiler::syntax::ast::operator::Unary;
 use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::reference::Reference;
 use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::IfDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
 use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::StructDetail;
 use crate::compiler::syntax::ast::statement::WhileDetail;
 use crate::compiler::syntax::ast::ty::Type;
 use crate::sys_error;
@@ -30,6 +32,7 @@ pub struct TypeInferrer {
     unary_operation_type_map: HashMap<(Unary, Rc<Type>), Rc<Type>>,
     binary_operation_type_map: HashMap<(Binary, Rc<Type>, Rc<Type>), Rc<Type>>,
     scope: TypeScope,
+    struct_scope: TypeScope,
 }
 
 impl TypeInferrer {
@@ -39,6 +42,7 @@ impl TypeInferrer {
             unary_operation_type_map: HashMap::new(),
             binary_operation_type_map: HashMap::new(),
             scope: TypeScope::new(),
+            struct_scope: TypeScope::new(),
         }
     }
 
@@ -170,6 +174,10 @@ impl TypeInferrer {
                     to_type.clone(),
                 )
             }
+            Expression::StructSpawn(name, fields) => {
+                self.struct_scope.lookup(&name)?;
+                todo!()
+            }
         };
         Ok(result)
     }
@@ -218,13 +226,17 @@ impl TypeInferrer {
             return Err(CompileError::ConditionNeedBool);
         }
         self.scope.enter(Tag::Anonymous);
+        self.struct_scope.enter(Tag::Anonymous);
         let true_body = self.infer_statement(context, true_body)?;
         self.scope.leave(Tag::Anonymous)?;
+        self.struct_scope.leave(Tag::Anonymous)?;
         let false_body = match false_body {
             Some(false_body) => {
                 self.scope.enter(Tag::Anonymous);
+                self.struct_scope.enter(Tag::Anonymous);
                 let false_body = self.infer_statement(context, false_body)?;
                 self.scope.leave(Tag::Anonymous)?;
+                self.struct_scope.leave(Tag::Anonymous)?;
                 Some(false_body)
             }
             None => None,
@@ -246,8 +258,10 @@ impl TypeInferrer {
             return Err(CompileError::ConditionNeedBool);
         }
         self.scope.enter(Tag::Named("while"));
+        self.struct_scope.enter(Tag::Named("while"));
         let body = self.infer_statement(context, body)?;
         self.scope.leave(Tag::Named("while"))?;
+        self.struct_scope.leave(Tag::Named("while"))?;
         Ok(Statement::While(WhileDetail(condition, body)))
     }
 
@@ -289,6 +303,7 @@ impl TypeInferrer {
             function_type,
         } = prototype.as_ref();
         self.scope.enter(Tag::Function(identifier.clone()));
+        self.struct_scope.enter(Tag::Function(identifier.clone()));
         let Type::Function {
             return_type,
             parameter_types,
@@ -305,6 +320,7 @@ impl TypeInferrer {
             })?;
         let body = self.infer_statement(context, body)?;
         self.scope.leave(Tag::Function(identifier.clone()))?;
+        self.struct_scope.leave(Tag::Function(identifier.clone()))?;
         Ok(Statement::Define(DefineDetail {
             prototype: FunctionPrototype {
                 identifier: identifier.clone(),
@@ -326,11 +342,13 @@ impl TypeInferrer {
             Statement::Empty => Statement::Empty,
             Statement::Block(statements) => {
                 self.scope.enter(Tag::Anonymous);
+                self.struct_scope.enter(Tag::Anonymous);
                 let statements = statements
                     .iter()
                     .map(|statement| self.infer_statement(context, statement))
                     .collect::<Result<Rc<_>, _>>()?;
                 self.scope.leave(Tag::Anonymous)?;
+                self.struct_scope.leave(Tag::Anonymous)?;
                 Statement::Block(statements)
             }
             Statement::Return(return_value) => Statement::Return(self.infer_return_statement(return_value.clone())?),
@@ -357,13 +375,14 @@ impl TypeInferrer {
             }) => self.infer_define_statement(context, prototype, body)?,
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let used_document_id = context.id_map.get(document_path).unwrap();
-                let type_map = context.type_map.get(used_document_id).unwrap();
-                let Some(symbol_type) = type_map.get(symbol) else {
+                let reference_map = context.reference_map.get(used_document_id).unwrap();
+                let Some(Reference::Binding(symbol_type)) = reference_map.get(symbol).map(Rc::as_ref) else {
                     sys_error!("used symbol must exist");
                 };
                 self.scope.declare(symbol.clone(), symbol_type.clone())?;
                 Statement::Using(UsingPath(document_path.clone(), symbol.clone()))
             }
+            Statement::Struct(StructDetail { name, fields }) => todo!(),
         };
         Ok(result.into())
     }
@@ -393,6 +412,7 @@ impl TypeInferrer {
                 | Statement::While(_) => Err(CompileError::ProcessInGlobal),
                 Statement::Let(_) | Statement::Using(_) => Ok(()),
                 Statement::Define(define_detail) => self.pre_scan_function_prototype(&define_detail.prototype),
+                Statement::Struct(_) => todo!(),
             })
     }
 
@@ -466,6 +486,7 @@ impl TypeInferrer {
         self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();
         self.scope.enter(Tag::Global);
+        self.struct_scope.enter(Tag::Global);
         self.pre_scan_global_items(&document)?;
         let statements = document
             .statements
@@ -474,6 +495,7 @@ impl TypeInferrer {
             .collect::<Result<Rc<_>, _>>()?;
         context.document_map.insert(id, Document { statements });
         self.scope.leave(Tag::Global)?;
+        self.struct_scope.leave(Tag::Global)?;
         Ok(())
     }
 }
