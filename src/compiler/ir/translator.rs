@@ -9,7 +9,6 @@ use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::Document;
 use crate::compiler::syntax::ast::crumb::FunctionPrototype;
 use crate::compiler::syntax::ast::crumb::Identifier;
-use crate::compiler::syntax::ast::crumb::Mutability;
 use crate::compiler::syntax::ast::crumb::Parameter;
 use crate::compiler::syntax::ast::crumb::Variable;
 use crate::compiler::syntax::ast::expression::Expression;
@@ -49,10 +48,8 @@ pub struct Translator {
 enum DeclType {
     Anonymous,
     Param(Rc<Identifier>, Rc<IrType>),
-    Immutable(Rc<Identifier>, Rc<IrType>),
-    Mutable(Rc<Identifier>, Rc<IrType>),
+    Local(Rc<Identifier>, Rc<IrType>),
     Global(Rc<Identifier>, Rc<IrType>),
-    Constant(Rc<Identifier>, Rc<IrType>),
     Function(Rc<Identifier>, Rc<IrType>),
     Label(&'static str),
 }
@@ -78,13 +75,7 @@ impl Translator {
                 self.scope.declare(symbol, (value.clone(), data_type))?;
                 value
             }
-            DeclType::Immutable(symbol, data_type) => {
-                let id = next_variable_id();
-                let value = Rc::new(Value::Register(format!("v{id}.{symbol}")));
-                self.scope.overwrite(symbol, (value.clone(), data_type))?;
-                value
-            }
-            DeclType::Mutable(symbol, data_type) => {
+            DeclType::Local(symbol, data_type) => {
                 let id = next_variable_id();
                 let value = Rc::new(Value::StackPointer(format!("v{id}.{symbol}")));
                 self.scope.overwrite(symbol, (value.clone(), data_type))?;
@@ -93,12 +84,6 @@ impl Translator {
             DeclType::Global(symbol, data_type) => {
                 let id = next_global_id();
                 let value = Rc::new(Value::GlobalPointer(format!("g{id}.{symbol}")));
-                self.scope.declare(symbol, (value.clone(), data_type))?;
-                value
-            }
-            DeclType::Constant(symbol, data_type) => {
-                let id = next_global_id();
-                let value = Rc::new(Value::GlobalPointer(format!("c{id}.{symbol}")));
                 self.scope.declare(symbol, (value.clone(), data_type))?;
                 value
             }
@@ -387,7 +372,7 @@ impl Translator {
     }
 
     /// source code example:
-    /// ```llvm
+    /// ```plain_text
     /// if condition {
     ///     do_something_a
     /// } else {
@@ -518,54 +503,33 @@ impl Translator {
 
     fn translate_let_statement(
         &mut self,
-        LetDetail(Variable(identifier, var_type, mutability), expression): &LetDetail,
+        LetDetail(Variable(identifier, var_type, _), expression): &LetDetail,
     ) -> Result<Rc<Instruction>, CompileError> {
         let data_type = IrType::from(var_type.as_ref()).into();
         let (expression_instructions, expression) = self.translate_expression(expression)?;
-        let assign_instruction = match (self.scope.is_global()?, mutability) {
-            (true, Mutability::Mutable) => {
-                let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
-                    sys_error!("must find it.");
-                };
-                Instruction::Global {
-                    lvalue,
-                    data_type,
-                    value: expression,
-                }
+        let assign_instruction = if self.scope.is_global()? {
+            let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
+                sys_error!("must find it.");
+            };
+            Instruction::Global {
+                lvalue,
+                data_type,
+                value: expression,
             }
-            (true, Mutability::Immutable) => {
-                let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
-                    sys_error!("must find it.");
-                };
-                Instruction::Constant {
-                    lvalue,
-                    data_type,
-                    value: expression,
-                }
-            }
-            (false, Mutability::Mutable) => {
-                let lvalue = self.declare(DeclType::Mutable(identifier.clone(), data_type.clone()))?;
-                Instruction::Batch(
-                    [
-                        Instruction::Allocate((lvalue.clone(), data_type.clone())).into(),
-                        Instruction::Store {
-                            data_type,
-                            from: expression,
-                            to: lvalue,
-                        }
-                        .into(),
-                    ]
+        } else {
+            let lvalue = self.declare(DeclType::Local(identifier.clone(), data_type.clone()))?;
+            Instruction::Batch(
+                [
+                    Instruction::Allocate((lvalue.clone(), data_type.clone())).into(),
+                    Instruction::Store {
+                        data_type,
+                        from: expression,
+                        to: lvalue,
+                    }
                     .into(),
-                )
-            }
-            (false, Mutability::Immutable) => {
-                let lvalue = self.declare(DeclType::Immutable(identifier.clone(), data_type.clone()))?;
-                Instruction::Copy {
-                    data_type,
-                    from: expression,
-                    to: lvalue,
-                }
-            }
+                ]
+                .into(),
+            )
         };
         let instructions = [expression_instructions, assign_instruction.into()].into();
         Ok(Instruction::Batch(instructions).into())
@@ -715,14 +679,9 @@ impl Translator {
                 | Statement::Expression(_)
                 | Statement::If(_)
                 | Statement::While(_) => sys_error!("unchecked global procedures"),
-                Statement::Let(LetDetail(Variable(identifier, var_type, mutability), _)) => {
+                Statement::Let(LetDetail(Variable(identifier, var_type, _), _)) => {
                     let data_type = Rc::new(IrType::from(var_type.clone()));
-                    let value = match mutability {
-                        Mutability::Mutable => self.declare(DeclType::Global(identifier.clone(), data_type.clone()))?,
-                        Mutability::Immutable => {
-                            self.declare(DeclType::Constant(identifier.clone(), data_type.clone()))?
-                        }
-                    };
+                    let value = self.declare(DeclType::Global(identifier.clone(), data_type.clone()))?;
                     ir_model_map.insert(identifier.clone(), (value, data_type));
                     Ok(())
                 }
