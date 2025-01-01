@@ -2,7 +2,9 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
+use crate::compiler::context::StructId;
 use crate::compiler::scope::Scope;
+use crate::compiler::syntax::ast::crumb::Identifier;
 use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
 use crate::util::pretty_format::indent;
@@ -15,7 +17,13 @@ pub type IrId = String;
 
 pub type IrModel = (Rc<Value>, Rc<IrType>);
 
-pub type IrScope = Scope<IrModel>;
+pub type IrScope = Scope<IrReference>;
+
+#[derive(Clone)]
+pub enum IrReference {
+    Binding(IrModel),
+    StructDef(StructId, Rc<Identifier>, Array<IrType>),
+}
 
 #[derive(Clone)]
 pub enum Value {
@@ -24,6 +32,7 @@ pub enum Value {
     ImmediateI32(i32),
     ImmediateI8(i8),
     ImmediateBool(bool),
+    ImmediateStruct(Array<(Rc<Value>, Rc<IrType>)>),
     StackPointer(IrId),
     GlobalPointer(IrId),
     Parameter(IrId),
@@ -45,6 +54,15 @@ impl Display for Value {
             Value::ImmediateBool(value) => {
                 let value = i32::from(*value);
                 write!(f, "{value}")
+            }
+            Value::ImmediateStruct(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|(field, ir_type)| format!("{ir_type} {field}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{{ {fields} }}")
             }
             Value::GlobalPointer(id) | Value::Function(id) => write!(f, "@{id}"),
             Value::Label(id) => write!(f, "{id}"),
@@ -124,6 +142,10 @@ pub enum Instruction {
         lvalue: Rc<Value>,
         data_type: Rc<IrType>,
         value: Rc<Value>,
+    },
+    Struct {
+        name: Rc<Identifier>,
+        fields: Array<IrType>,
     },
     ReturnVoid,
     Return {
@@ -254,6 +276,14 @@ impl PrettyFormat for Instruction {
                 value,
             } => {
                 writeln!(f, "{indentation}{lvalue} = constant {data_type} {value}")
+            }
+            Instruction::Struct { name, fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|field| format!("{field}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(f, "{indentation}%{name} = type {{ {fields} }}")
             }
             Instruction::ReturnVoid => {
                 writeln!(f, "{indentation}ret void")

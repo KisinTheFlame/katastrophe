@@ -46,7 +46,7 @@ impl MutabilityChecker {
 
     fn check_statement(&mut self, context: &Context, statement: &Statement) -> Result<(), CompileError> {
         match statement {
-            Statement::Empty | Statement::Return(_) => Ok(()),
+            Statement::Empty | Statement::Return(_) | Statement::Struct(_) => Ok(()),
             Statement::Block(statements) => statements
                 .iter()
                 .try_for_each(|statement| self.check_statement(context, statement)),
@@ -135,7 +135,8 @@ impl MutabilityChecker {
             | Expression::Unary(_, _, _)
             | Expression::Binary(_, _, _, _)
             | Expression::Call(_, _)
-            | Expression::Cast(_, _, _) => Err(CompileError::IllegalLValue),
+            | Expression::Cast(_, _, _)
+            | Expression::StructSpawn(_, _) => Err(CompileError::IllegalLValue),
         }
     }
 }
