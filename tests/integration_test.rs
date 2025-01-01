@@ -21,3 +21,8 @@ fn test_fibonacci() {
 fn test_i8() {
     test_with("i8");
 }
+
+#[test]
+fn test_struct() {
+    test_with("struct");
+}

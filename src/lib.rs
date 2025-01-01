@@ -6,6 +6,7 @@ use compiler::context::Context;
 use compiler::err::CompileError;
 use compiler::ir::builtin::generate_entry;
 use compiler::ir::builtin::generate_libc_function;
+use compiler::ir::instruction::IrReference;
 use compiler::ir::translator::Translator;
 use compiler::semantics::lvalue_checker::LValueChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;
@@ -80,12 +81,16 @@ pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> 
         .collect::<Vec<_>>()
         .join("\n");
     let builtin_ir = generate_libc_function()?;
-    let (main_value, _) = context
+    let IrReference::Binding((main_value, _)) = context
         .ir_model_map
         .get(&main_document_id)
         .unwrap()
         .get(&String::from("main"))
-        .unwrap();
+        .unwrap()
+        .as_ref()
+    else {
+        sys_error!("failed to get main value");
+    };
     let entry_ir = generate_entry(main_value.clone());
     let ir_code = formatdoc! {"
         {builtin_ir}

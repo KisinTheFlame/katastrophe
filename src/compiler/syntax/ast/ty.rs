@@ -3,10 +3,12 @@ use std::fmt::{self};
 use std::hash::Hash;
 use std::rc::Rc;
 
-use crate::CompileResult;
 use crate::compiler::bit_width::BitWidth;
-use crate::compiler::err::CompileError;
+use crate::compiler::context::StructId;
 use crate::util::common::Array;
+
+use super::crumb::Field;
+use super::crumb::Identifier;
 
 #[derive(Clone)]
 pub enum Type {
@@ -17,6 +19,11 @@ pub enum Type {
     Function {
         return_type: Rc<Type>,
         parameter_types: Array<Type>,
+    },
+    Struct {
+        id: StructId,
+        name: Rc<Identifier>,
+        fields: Array<Field>,
     },
 }
 
@@ -74,21 +81,10 @@ impl Display for Type {
                     .join(", ");
                 write!(f, "({parameter_types}) -> {return_type}")?;
             }
+            Type::Struct { id, name, .. } => {
+                write!(f, "struct {name}({id})")?;
+            }
         };
         Ok(())
-    }
-}
-
-impl TryFrom<String> for Type {
-    type Error = CompileError;
-
-    fn try_from(value: String) -> CompileResult<Type> {
-        match value.as_str() {
-            "void" => Ok(Type::Never),
-            "i32" => Ok(Type::Int(BitWidth::Bit32)),
-            "i8" => Ok(Type::Int(BitWidth::Bit8)),
-            "bool" => Ok(Type::Bool),
-            _ => Err(CompileError::UnknownType(value)),
-        }
     }
 }

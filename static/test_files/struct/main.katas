@@ -1,0 +1,31 @@
+using std::io::putchar;
+
+struct Person {
+    age as i32,
+    male as bool,
+}
+
+def print_number(x as i32) {
+    if x <= 9 {
+        putchar('0' + x as i8);
+        return;
+    }
+    print_number(x / 10);
+    putchar('0' + (x - x / 10 * 10) as i8);
+}
+
+def newline() {
+    putchar('\n');
+}
+
+def main() -> i32 {
+    let mut person = @Person {
+        male: true,
+        age: 18,
+    };
+    person.male = false;
+    person.age = 22;
+    print_number(person.age + 3);
+    newline();
+    return 0;
+}

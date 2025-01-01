@@ -2,9 +2,12 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
-use memory::Memory;
+use ir_type::IrField;
+use value::Value;
 
+use crate::compiler::context::StructId;
 use crate::compiler::scope::Scope;
+use crate::compiler::syntax::ast::crumb::Identifier;
 use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
 use crate::util::pretty_format::indent;
@@ -13,46 +16,18 @@ use self::ir_type::IrType;
 
 pub mod ir_type;
 pub mod memory;
+pub mod value;
 
 pub type IrId = String;
 
 pub type IrModel = (Rc<Value>, Rc<IrType>);
 
-pub type IrScope = Scope<IrModel>;
+pub type IrScope = Scope<IrReference>;
 
 #[derive(Clone)]
-pub enum Value {
-    Void,
-    Register(IrId),
-    ImmediateI32(i32),
-    ImmediateI8(i8),
-    ImmediateBool(bool),
-    Pointer(Rc<Memory>),
-    Parameter(IrId),
-    Function(IrId),
-    Label(IrId),
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Void => {
-                panic!("void")
-            }
-            Value::Register(id) | Value::Parameter(id) => {
-                write!(f, "%{id}")
-            }
-            Value::ImmediateI32(value) => write!(f, "{value}"),
-            Value::ImmediateI8(value) => write!(f, "{value}"),
-            Value::ImmediateBool(value) => {
-                let value = i32::from(*value);
-                write!(f, "{value}")
-            }
-            Value::Function(id) => write!(f, "@{id}"),
-            Value::Pointer(memory) => write!(f, "{memory}"),
-            Value::Label(id) => write!(f, "{id}"),
-        }
-    }
+pub enum IrReference {
+    Binding(IrModel),
+    StructDef(StructId, Rc<Identifier>, Array<IrField>),
 }
 
 pub struct IrFunctionPrototype {
@@ -127,6 +102,22 @@ pub enum Instruction {
         lvalue: Rc<Value>,
         data_type: Rc<IrType>,
         value: Rc<Value>,
+    },
+    Struct {
+        name: Rc<Identifier>,
+        fields: Array<IrType>,
+    },
+    GetElementPtr {
+        from: Rc<Value>,
+        to: Rc<Value>,
+        data_type: Rc<IrType>,
+        index: usize,
+    },
+    ExtractValue {
+        from: Rc<Value>,
+        to: Rc<Value>,
+        data_type: Rc<IrType>,
+        index: usize,
     },
     ReturnVoid,
     Return {
@@ -257,6 +248,33 @@ impl PrettyFormat for Instruction {
                 value,
             } => {
                 writeln!(f, "{indentation}{lvalue} = constant {data_type} {value}")
+            }
+            Instruction::Struct { name, fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|field| format!("{field}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(f, "{indentation}%{name} = type {{ {fields} }}")
+            }
+            Instruction::GetElementPtr {
+                from,
+                to,
+                data_type,
+                index,
+            } => {
+                writeln!(
+                    f,
+                    "{indentation}{to} = getelementptr {data_type}, ptr {from}, i32 {index}"
+                )
+            }
+            Instruction::ExtractValue {
+                from,
+                to,
+                data_type,
+                index,
+            } => {
+                writeln!(f, "{indentation}{to} = extractvalue {data_type} {from}, {index}")
             }
             Instruction::ReturnVoid => {
                 writeln!(f, "{indentation}ret void")

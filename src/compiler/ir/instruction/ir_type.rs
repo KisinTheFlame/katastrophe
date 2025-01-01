@@ -3,8 +3,14 @@ use std::fmt::{self};
 use std::rc::Rc;
 
 use crate::compiler::bit_width::BitWidth;
+use crate::compiler::context::StructId;
+use crate::compiler::syntax::ast::crumb::Field;
+use crate::compiler::syntax::ast::crumb::Identifier;
 use crate::compiler::syntax::ast::ty::Type;
+use crate::sys_error;
 use crate::util::common::Array;
+
+pub struct IrField(pub Rc<Identifier>, pub Rc<IrType>);
 
 #[derive(Clone)]
 pub enum IrType {
@@ -14,6 +20,11 @@ pub enum IrType {
     Function {
         return_type: Rc<IrType>,
         parameter_types: Array<IrType>,
+    },
+    Struct {
+        id: StructId,
+        name: Rc<Identifier>,
+        fields: Array<IrField>,
     },
 }
 
@@ -41,6 +52,19 @@ impl From<&Type> for IrType {
                     .map(Rc::new)
                     .collect(),
             },
+            Type::Struct { id, name, fields } => IrType::Struct {
+                id: *id,
+                name: name.clone(),
+                fields: fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|Field(field_name, field_type)| {
+                        let field_type = IrType::from(field_type.as_ref());
+                        IrField(field_name.clone(), field_type.into())
+                    })
+                    .map(Rc::from)
+                    .collect(),
+            },
             Type::Unknown => unimplemented!(),
         }
     }
@@ -56,6 +80,7 @@ impl Display for IrType {
                 return_type: _,
                 parameter_types: _,
             } => panic!("should never print function type"),
+            IrType::Struct { id, name, .. } => write!(f, "%s{id}.{name}"),
         }
     }
 }
@@ -82,4 +107,18 @@ impl PartialEq for IrType {
             (_, _) => false,
         }
     }
+}
+
+/// # Panics
+pub fn find_field(object_type: &Rc<IrType>, field: &Rc<Identifier>) -> (usize, Rc<IrType>) {
+    let IrType::Struct { fields, .. } = object_type.as_ref() else {
+        sys_error!("should be a struct type.");
+    };
+    let (index, IrField(_, field_type)) = fields
+        .iter()
+        .map(Rc::as_ref)
+        .enumerate()
+        .find(|(_, IrField(field_name, _))| field_name == field)
+        .unwrap();
+    (index, field_type.clone())
 }

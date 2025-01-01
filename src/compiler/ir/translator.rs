@@ -8,6 +8,8 @@ use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
 use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::Document;
+use crate::compiler::syntax::ast::crumb::Field;
+use crate::compiler::syntax::ast::crumb::FieldInit;
 use crate::compiler::syntax::ast::crumb::FunctionPrototype;
 use crate::compiler::syntax::ast::crumb::Identifier;
 use crate::compiler::syntax::ast::crumb::Parameter;
@@ -19,10 +21,12 @@ use crate::compiler::syntax::ast::operator::Unary;
 use crate::compiler::syntax::ast::package::DocumentPath;
 use crate::compiler::syntax::ast::package::UsingPath;
 use crate::compiler::syntax::ast::package::get_builtin;
+use crate::compiler::syntax::ast::reference::Reference;
 use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::IfDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
 use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::StructDetail;
 use crate::compiler::syntax::ast::statement::WhileDetail;
 use crate::compiler::syntax::ast::ty::Type;
 use crate::sys_error;
@@ -38,10 +42,13 @@ use super::instruction::Comparator;
 use super::instruction::Instruction;
 use super::instruction::IrBinaryOpcode;
 use super::instruction::IrFunctionPrototype;
+use super::instruction::IrReference;
 use super::instruction::IrScope;
-use super::instruction::Value;
+use super::instruction::ir_type::IrField;
 use super::instruction::ir_type::IrType;
+use super::instruction::ir_type::find_field;
 use super::instruction::memory::Memory;
+use super::instruction::value::Value;
 
 pub struct Translator {
     document_path: Rc<DocumentPath>,
@@ -52,6 +59,7 @@ enum DeclType {
     Anonymous,
     Param(Rc<Identifier>, Rc<IrType>),
     Local(Rc<Identifier>, Rc<IrType>),
+    AnonymousLocal,
     Global(Rc<Identifier>, Rc<IrType>),
     Function(Rc<Identifier>, Rc<IrType>),
     Label(&'static str),
@@ -75,27 +83,36 @@ impl Translator {
             DeclType::Param(symbol, data_type) => {
                 let id = next_parameter_id();
                 let value = Rc::new(Value::Parameter(format!("p{id}.{symbol}")));
-                self.scope.declare(symbol, (value.clone(), data_type))?;
+                self.scope
+                    .declare(symbol, IrReference::Binding((value.clone(), data_type)))?;
                 value
+            }
+            DeclType::AnonymousLocal => {
+                let id = next_anonymous_id();
+                let memory = Memory::Stack(format!("t{id}")).into();
+                Value::Pointer(memory).into()
             }
             DeclType::Local(symbol, data_type) => {
                 let id = next_variable_id();
                 let memory = Memory::Stack(format!("v{id}.{symbol}")).into();
                 let value = Rc::new(Value::Pointer(memory));
-                self.scope.overwrite(symbol, (value.clone(), data_type))?;
+                self.scope
+                    .overwrite(symbol, IrReference::Binding((value.clone(), data_type)))?;
                 value
             }
             DeclType::Global(symbol, data_type) => {
                 let id = next_global_id();
                 let memory = Memory::Global(format!("g{id}.{symbol}")).into();
                 let value = Rc::new(Value::Pointer(memory));
-                self.scope.declare(symbol, (value.clone(), data_type))?;
+                self.scope
+                    .declare(symbol, IrReference::Binding((value.clone(), data_type)))?;
                 value
             }
             DeclType::Function(symbol, data_type) => {
                 let id = next_function_id();
                 let value = Rc::new(Value::Function(format!("f{id}.{symbol}")));
-                self.scope.declare(symbol, (value.clone(), data_type))?;
+                self.scope
+                    .declare(symbol, IrReference::Binding((value.clone(), data_type)))?;
                 value
             }
             DeclType::Label(tag) => {
@@ -168,8 +185,23 @@ impl Translator {
     fn translate_lvalue(&mut self, lvalue: &Rc<LValue>) -> CompileResult<(Rc<Instruction>, Rc<Value>, Rc<IrType>)> {
         match lvalue.as_ref() {
             LValue::Id(identifier) => {
-                let (value, ir_type) = self.scope.lookup(identifier)?.unwrap();
+                let IrReference::Binding((value, ir_type)) = self.scope.lookup(identifier)?.unwrap() else {
+                    sys_error!("should be inspected in type checking.");
+                };
                 Ok((Instruction::NoOperation.into(), value, ir_type))
+            }
+            LValue::Access(object, field) => {
+                let (object_instruction, object_pointer, object_type) = self.translate_lvalue(object)?;
+                let (index, field_type) = find_field(&object_type, field);
+                let result = self.declare(DeclType::AnonymousLocal)?;
+                let instruction = Instruction::GetElementPtr {
+                    from: object_pointer,
+                    to: result.clone(),
+                    data_type: object_type,
+                    index,
+                };
+                let instructions = [object_instruction, instruction.into()];
+                Ok((Instruction::Batch(instructions.into()).into(), result, field_type))
             }
         }
     }
@@ -248,7 +280,7 @@ impl Translator {
         arguments: &Array<Expression>,
     ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
         let receiver = self.declare(DeclType::Anonymous)?;
-        let Some((function_id, function_type)) = self.scope.lookup(function_name)? else {
+        let Some(IrReference::Binding((function_id, function_type))) = self.scope.lookup(function_name)? else {
             sys_error!("undeclared identifier.");
         };
         let IrType::Function {
@@ -331,9 +363,11 @@ impl Translator {
 
     fn translate_expression(&mut self, expression: &Rc<Expression>) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
         match expression.as_ref() {
-            Expression::Identifier(identifier) => self.scope.lookup(identifier)?.map_or_else(
-                || sys_error!("should be inspected in type checking."),
-                |(value, data_type)| match *value {
+            Expression::Identifier(identifier) => {
+                let Some(IrReference::Binding((value, data_type))) = self.scope.lookup(identifier)? else {
+                    sys_error!("should be inspected in type checking.");
+                };
+                match value.as_ref() {
                     Value::Register(_) | Value::Parameter(_) => Ok((Instruction::NoOperation.into(), value)),
                     Value::Pointer(_) => {
                         let result = self.declare(DeclType::Anonymous)?;
@@ -345,8 +379,8 @@ impl Translator {
                         Ok((instruction.into(), result))
                     }
                     _ => panic!(),
-                },
-            ),
+                }
+            }
             Expression::IntLiteral(literal) => {
                 Ok((Instruction::NoOperation.into(), Value::ImmediateI32(*literal).into()))
             }
@@ -367,6 +401,65 @@ impl Translator {
             Expression::Call(function_name, arguments) => self.translate_call_expression(function_name, arguments),
             Expression::Cast(expression, from_type, to_type) => {
                 self.translate_cast_expression(expression, from_type, to_type)
+            }
+            Expression::StructSpawn(name, fields) => {
+                let (field_instructions, field_values) = fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|FieldInit(_, expression)| expression)
+                    .map(|expression| self.translate_expression(expression))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .unzip::<_, _, Vec<_>, Vec<_>>();
+                let field_instructions: Array<_> = field_instructions.into();
+                let field_values: Array<_> = field_values.into();
+                let IrReference::StructDef(id, _, fields) = self.scope.lookup(name)?.unwrap() else {
+                    sys_error!("should be inspected in type checking.");
+                };
+                let ir_type = IrType::Struct {
+                    id,
+                    name: name.clone(),
+                    fields: fields.clone(),
+                };
+                let ir_type = Rc::new(ir_type);
+                let pointer = self.declare(DeclType::Local(format!("sp.{name}").into(), ir_type.clone()))?;
+                let fields = field_values
+                    .iter()
+                    .zip(fields.iter().map(Rc::as_ref).map(|IrField(_, field_type)| field_type))
+                    .map(|(value, ty)| (value.clone(), ty.clone()))
+                    .map(Rc::new)
+                    .collect::<Array<_>>();
+                let result = self.declare(DeclType::Anonymous)?;
+                let instructions = [
+                    Instruction::Batch(field_instructions),
+                    Instruction::Allocate((pointer.clone(), ir_type.clone())),
+                    Instruction::Store {
+                        data_type: ir_type.clone(),
+                        from: Value::ImmediateStruct(fields).into(),
+                        to: pointer.clone(),
+                    },
+                    Instruction::Load {
+                        data_type: ir_type.clone(),
+                        from: pointer.clone(),
+                        to: result.clone(),
+                    },
+                ];
+                let instructions = instructions.into_iter().map(Rc::new).collect();
+                Ok((Instruction::Batch(instructions).into(), result))
+            }
+            Expression::Access(expression, object_type, field) => {
+                let object_type = Rc::new(IrType::from(object_type.as_ref()));
+                let (object_instruction, object_value) = self.translate_expression(expression)?;
+                let (index, _) = find_field(&object_type, field);
+                let result = self.declare(DeclType::Anonymous)?;
+                let extract_value = Instruction::ExtractValue {
+                    from: object_value,
+                    to: result.clone(),
+                    data_type: object_type,
+                    index,
+                };
+                let instructions = [object_instruction, extract_value.into()];
+                Ok((Instruction::Batch(instructions.into()).into(), result))
             }
         }
     }
@@ -509,7 +602,7 @@ impl Translator {
         let data_type = IrType::from(var_type.as_ref()).into();
         let (expression_instructions, expression) = self.translate_expression(expression)?;
         let assign_instruction = if self.scope.is_global()? {
-            let Some((lvalue, _)) = self.scope.lookup(identifier)? else {
+            let Some(IrReference::Binding((lvalue, _))) = self.scope.lookup(identifier)? else {
                 sys_error!("must find it.");
             };
             Instruction::Global {
@@ -542,7 +635,7 @@ impl Translator {
         };
         let (expression_instructions, expression) = self.translate_expression(&return_value)?;
         let function_name = self.scope.current_function()?;
-        let Some((_, function_type)) = self.scope.lookup(&function_name)? else {
+        let Some(IrReference::Binding((_, function_type))) = self.scope.lookup(&function_name)? else {
             sys_error!("must be a function type");
         };
         let IrType::Function {
@@ -579,7 +672,7 @@ impl Translator {
             function_type: _,
         } = prototype.as_ref();
 
-        let Some((function, function_type)) = self.scope.lookup(identifier)? else {
+        let Some(IrReference::Binding((function, function_type))) = self.scope.lookup(identifier)? else {
             sys_error!("must pre scanned it.");
         };
         if *builtin {
@@ -638,11 +731,38 @@ impl Translator {
             Statement::Define(define_detail) => self.translate_define_statement(context, define_detail),
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let id = context.id_map.get(document_path).unwrap();
-                let Some((value, ir_type)) = context.ir_model_map.get(id).unwrap().get(symbol) else {
-                    sys_error!("used symbol must exist");
+                let Some(referent) = context.ir_model_map.get(id).unwrap().get(symbol) else {
+                    sys_error!("should be inspected: used symbol must exist");
                 };
-                self.scope.declare(symbol.clone(), (value.clone(), ir_type.clone()))?;
+                match referent.as_ref() {
+                    IrReference::Binding((value, ir_type)) => {
+                        self.scope
+                            .declare(symbol.clone(), IrReference::Binding((value.clone(), ir_type.clone())))?;
+                    }
+                    IrReference::StructDef(id, name, fields) => {
+                        self.scope.declare(
+                            symbol.clone(),
+                            IrReference::StructDef(*id, name.clone(), fields.clone()),
+                        )?;
+                    }
+                }
                 Ok(Instruction::NoOperation.into())
+            }
+            Statement::Struct(StructDetail { id, name, fields }) => {
+                let field_types = fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|Field(_, field_type)| field_type)
+                    .map(Rc::as_ref)
+                    .map(IrType::from)
+                    .map(Rc::new)
+                    .collect::<Array<_>>();
+                let ir_name = format!("s{id}.{name}");
+                Ok(Instruction::Struct {
+                    name: ir_name.into(),
+                    fields: field_types,
+                }
+                .into())
             }
         }
     }
@@ -657,11 +777,10 @@ impl Translator {
     }
 
     /// # Errors
+    /// # Panics
     pub fn pre_scan_global(&mut self, context: &mut Context, document_id: DocumentId) -> CompileResult<()> {
         self.scope.enter(Tag::Global);
-        let Some(document) = context.document_map.get(&document_id) else {
-            sys_error!("document must exist");
-        };
+        let document = context.document_map.get(&document_id).unwrap();
         let mut ir_model_map = HashMap::new();
         document
             .statements
@@ -676,7 +795,7 @@ impl Translator {
                 Statement::Let(LetDetail(Variable(identifier, var_type, _), _)) => {
                     let data_type = Rc::new(IrType::from(var_type.clone()));
                     let value = self.declare(DeclType::Global(identifier.clone(), data_type.clone()))?;
-                    ir_model_map.insert(identifier.clone(), (value, data_type));
+                    ir_model_map.insert(identifier.clone(), IrReference::Binding((value, data_type)).into());
                     Ok(())
                 }
                 Statement::Define(DefineDetail {
@@ -692,10 +811,38 @@ impl Translator {
 
                     let function_type = Rc::new(IrType::from(function_type.clone()));
                     let value = self.declare(DeclType::Function(identifier.clone(), function_type.clone()))?;
-                    ir_model_map.insert(identifier.clone(), (value, function_type));
+                    ir_model_map.insert(identifier.clone(), IrReference::Binding((value, function_type)).into());
                     Ok(())
                 }
                 Statement::Using(_) => Ok(()),
+                Statement::Struct(StructDetail { id: _, name, fields }) => {
+                    let Reference::StructDef(id, _, _) = context
+                        .reference_map
+                        .get(&document_id)
+                        .unwrap()
+                        .get(name)
+                        .unwrap()
+                        .as_ref()
+                    else {
+                        sys_error!("must be a struct definition");
+                    };
+                    let fields = fields
+                        .iter()
+                        .map(Rc::as_ref)
+                        .map(|Field(field_name, field_type)| {
+                            let field_type = IrType::from(field_type.as_ref());
+                            IrField(field_name.clone(), field_type.into())
+                        })
+                        .map(Rc::new)
+                        .collect::<Array<_>>();
+                    self.scope
+                        .declare(name.clone(), IrReference::StructDef(*id, name.clone(), fields.clone()))?;
+                    ir_model_map.insert(
+                        name.clone(),
+                        IrReference::StructDef(*id, name.clone(), fields.clone()).into(),
+                    );
+                    Ok(())
+                }
             })?;
         context.ir_model_map.insert(document_id, ir_model_map);
         Ok(())

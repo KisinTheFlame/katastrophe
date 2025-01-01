@@ -3,9 +3,11 @@ use std::mem;
 use std::rc::Rc;
 
 use crate::CompileResult;
+use crate::compiler::bit_width::BitWidth;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::context::next_document_id;
+use crate::compiler::context::next_struct_id;
 use crate::compiler::err::CompileError;
 use crate::compiler::lexis::lexer::Lexer;
 use crate::compiler::lexis::token::Keyword;
@@ -13,10 +15,13 @@ use crate::compiler::lexis::token::Symbol;
 use crate::compiler::lexis::token::Token;
 use crate::compiler::scope::Scope;
 use crate::compiler::scope::Tag;
+use crate::compiler::syntax::ast::crumb::Field;
 use crate::compiler::syntax::ast::package::load_package_path;
+use crate::compiler::syntax::ast::statement::StructDetail;
 use crate::util::common::Array;
 
 use super::ast::Document;
+use super::ast::crumb::FieldInit;
 use super::ast::crumb::FunctionPrototype;
 use super::ast::crumb::Identifier;
 use super::ast::crumb::Mutability;
@@ -123,7 +128,7 @@ impl Parser {
         Ok(args.into())
     }
 
-    fn parse_plain_identifier(&mut self) -> CompileResult<String> {
+    fn parse_identifier(&mut self) -> CompileResult<String> {
         if let Some(Token::Identifier(identifier)) = self.lexer.peek() {
             let identifier = identifier.clone();
             self.lexer.next();
@@ -133,13 +138,20 @@ impl Parser {
         }
     }
 
-    fn parse_identifier(&mut self) -> CompileResult<Expression> {
-        let identifier = self.parse_plain_identifier()?;
+    fn parse_identifier_or_call_or_access(&mut self) -> CompileResult<Expression> {
+        let identifier = self.parse_identifier()?;
         if self.match_symbol(Symbol::LeftParentheses) {
-            Ok(Expression::Call(identifier.into(), self.parse_function_call_args()?))
-        } else {
-            Ok(Expression::Identifier(identifier.into()))
+            return Ok(Expression::Call(identifier.into(), self.parse_function_call_args()?));
         }
+        if self.match_symbol(Symbol::Dot) {
+            let mut expression = Expression::Identifier(identifier.into());
+            while self.expect_symbol(Symbol::Dot) {
+                let field = self.parse_identifier()?.into();
+                expression = Expression::Access(expression.into(), Type::Unknown.into(), field);
+            }
+            return Ok(expression);
+        }
+        Ok(Expression::Identifier(identifier.into()))
     }
 
     fn parse_integer_literal(&mut self, literal: i32) -> Expression {
@@ -188,28 +200,50 @@ impl Parser {
         }
     }
 
+    fn parse_spawn_expression(&mut self, spawned: Rc<Identifier>) -> CompileResult<Expression> {
+        self.lexer.next();
+        self.digest_symbol(Symbol::LeftBrace)?;
+        let mut fields = Vec::new();
+        while !self.expect_symbol(Symbol::RightBrace) {
+            let field_name = self.parse_identifier()?.into();
+            self.digest_symbol(Symbol::Colon)?;
+            let field_value = self.parse_expression()?.into();
+            fields.push(FieldInit(field_name, field_value).into());
+            if !self.expect_symbol(Symbol::Comma) {
+                break;
+            }
+        }
+        Ok(Expression::StructSpawn(spawned, fields.into()))
+    }
+
     fn parse_primary(&mut self) -> CompileResult<Expression> {
-        match self.lexer.peek() {
-            Some(Token::Identifier(_)) => Ok(self.parse_identifier()?),
-            Some(Token::IntLiteral(literal)) => {
+        let Some(token) = self.lexer.peek() else {
+            return Err(CompileError::UnexpectedParseEOF);
+        };
+        match token {
+            Token::Identifier(_) => Ok(self.parse_identifier_or_call_or_access()?),
+            Token::IntLiteral(literal) => {
                 let literal = *literal;
                 Ok(self.parse_integer_literal(literal))
             }
-            Some(Token::CharLiteral(literal)) => {
+            Token::CharLiteral(literal) => {
                 let literal = *literal;
                 Ok(self.parse_char_literal(literal))
             }
-            Some(Token::FloatLiteral(literal)) => {
+            Token::FloatLiteral(literal) => {
                 let literal = *literal;
                 Ok(self.parse_float_literal(literal))
             }
-            Some(Token::BoolLiteral(literal)) => {
+            Token::BoolLiteral(literal) => {
                 let literal = *literal;
                 Ok(self.parse_bool_literal(literal))
             }
-            Some(Token::Symbol(Symbol::LeftParentheses)) => Ok(self.parse_parentheses_expression()?),
-            Some(_) => Ok(self.parse_unary_expression()?),
-            None => Err(CompileError::UnexpectedParseEOF),
+            Token::Symbol(Symbol::LeftParentheses) => Ok(self.parse_parentheses_expression()?),
+            Token::Spawning(spawned) => {
+                let spawned = spawned.clone().into();
+                Ok(self.parse_spawn_expression(spawned)?)
+            }
+            _ => Ok(self.parse_unary_expression()?),
         }
     }
 
@@ -247,9 +281,11 @@ impl Parser {
             | Symbol::LeftBrace
             | Symbol::RightBrace
             | Symbol::Comma
+            | Symbol::Colon
             | Symbol::Semicolon
             | Symbol::DoubleColon
-            | Symbol::Arrow => None,
+            | Symbol::Arrow
+            | Symbol::Dot => None,
         }
     }
 
@@ -339,35 +375,37 @@ impl Parser {
         Ok(Statement::Block(statements.into()))
     }
 
-    fn parse_if_statement(&mut self, context: &mut Context) -> CompileResult<IfDetail> {
+    fn parse_if_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::If)?;
         let condition = self.parse_expression()?.into();
         let true_body = self.parse_block_statement(context)?.into();
         let false_body = if self.expect_keyword(Keyword::Else) {
             if self.match_keyword(Keyword::If) {
-                Some(Statement::If(self.parse_if_statement(context)?).into())
+                Some(self.parse_if_statement(context)?.into())
             } else {
                 Some(self.parse_block_statement(context)?.into())
             }
         } else {
             None
         };
-        Ok(IfDetail {
+        let if_detail = IfDetail {
             condition,
             true_body,
             false_body,
-        })
+        };
+        Ok(Statement::If(if_detail))
     }
 
-    fn parse_while_statement(&mut self, context: &mut Context) -> CompileResult<WhileDetail> {
+    fn parse_while_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::While)?;
         let condition = self.parse_expression()?.into();
         let body = self.parse_block_statement(context)?.into();
-        Ok(WhileDetail(condition, body))
+        let while_detail = WhileDetail(condition, body);
+        Ok(Statement::While(while_detail))
     }
 
     fn parse_function_parameter(&mut self) -> CompileResult<(Parameter, Type)> {
-        let identifier = self.parse_plain_identifier()?;
+        let identifier = self.parse_identifier()?;
         self.digest_keyword(Keyword::As)?;
         let parameter_type = self.parse_type()?;
         Ok((Parameter(identifier.into()), parameter_type))
@@ -416,8 +454,14 @@ impl Parser {
         if self.expect_symbol(Symbol::LeftParentheses) {
             self.parse_function_type()
         } else {
-            let type_str = self.parse_plain_identifier()?;
-            Type::try_from(type_str)
+            let type_str = self.parse_identifier()?;
+            match type_str.as_str() {
+                "void" => Ok(Type::Never),
+                "i32" => Ok(Type::Int(BitWidth::Bit32)),
+                "i8" => Ok(Type::Int(BitWidth::Bit8)),
+                "bool" => Ok(Type::Bool),
+                _ => Err(CompileError::UnknownType(type_str.into())),
+            }
         }
     }
 
@@ -430,7 +474,7 @@ impl Parser {
     }
 
     fn parse_function_prototype(&mut self) -> CompileResult<FunctionPrototype> {
-        let identifier = self.parse_plain_identifier()?.into();
+        let identifier = self.parse_identifier()?.into();
         let (parameters, parameter_types) = self.parse_function_parameters()?;
         let return_type = self.parse_function_return_type()?.into();
         Ok(FunctionPrototype {
@@ -444,7 +488,7 @@ impl Parser {
         })
     }
 
-    fn parse_define_statement(&mut self, context: &mut Context) -> CompileResult<DefineDetail> {
+    fn parse_define_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::Define)?;
         let builtin = self.expect_keyword(Keyword::Builtin);
         let prototype = self.parse_function_prototype()?;
@@ -457,21 +501,22 @@ impl Parser {
         self.scope.enter(Tag::Function(identifier.clone()));
         let body = self.parse_block_statement(context)?.into();
         self.scope.leave(Tag::Function(identifier.clone()))?;
-        Ok(DefineDetail {
+        let define_detail = DefineDetail {
             prototype: prototype.into(),
             builtin,
             body,
-        })
+        };
+        Ok(Statement::Define(define_detail))
     }
 
-    fn parse_let_statement(&mut self) -> CompileResult<LetDetail> {
+    fn parse_let_statement(&mut self) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::Let)?;
         let mutability = if self.expect_keyword(Keyword::Mut) {
             Mutability::Mutable
         } else {
             Mutability::Immutable
         };
-        let lvalue = Rc::new(self.parse_plain_identifier()?);
+        let lvalue = Rc::new(self.parse_identifier()?);
         let lvalue_type = if self.expect_keyword(Keyword::As) {
             self.parse_type()?
         } else {
@@ -485,7 +530,8 @@ impl Parser {
             let reference = Reference::Binding(lvalue_type.clone(), mutability).into();
             self.reference_map.insert(lvalue.clone(), reference);
         }
-        Ok(LetDetail(Variable(lvalue, lvalue_type, mutability), expression.into()))
+        let let_detail = LetDetail(Variable(lvalue, lvalue_type, mutability), expression.into());
+        Ok(Statement::Let(let_detail))
     }
 
     fn parse_return_statement(&mut self) -> CompileResult<Statement> {
@@ -501,9 +547,9 @@ impl Parser {
     fn parse_using_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::Using)?;
         let mut path_nodes = Vec::new();
-        path_nodes.push(self.parse_plain_identifier()?);
+        path_nodes.push(self.parse_identifier()?);
         while self.expect_symbol(Symbol::DoubleColon) {
-            path_nodes.push(self.parse_plain_identifier()?);
+            path_nodes.push(self.parse_identifier()?);
         }
         self.digest_symbol(Symbol::Semicolon)?;
         let Some((item, path_nodes)) = path_nodes.split_last() else {
@@ -516,19 +562,46 @@ impl Parser {
         Ok(Statement::Using(using_path))
     }
 
+    fn parse_struct_statement(&mut self) -> CompileResult<Statement> {
+        self.digest_keyword(Keyword::Struct)?;
+        let struct_name = Rc::new(self.parse_identifier()?);
+        self.digest_symbol(Symbol::LeftBrace)?;
+        let mut fields = Vec::new();
+        while !self.match_symbol(Symbol::RightBrace) {
+            let field_name = self.parse_identifier()?.into();
+            self.digest_keyword(Keyword::As)?;
+            let field_type = self.parse_type()?.into();
+            fields.push(Field(field_name, field_type).into());
+            if !self.expect_symbol(Symbol::Comma) {
+                break;
+            }
+        }
+        self.digest_symbol(Symbol::RightBrace)?;
+
+        let fields = fields.iter().cloned().collect::<Array<_>>();
+        let struct_id = next_struct_id();
+        let reference = Reference::StructDef(struct_id, struct_name.clone(), fields.clone()).into();
+        self.reference_map.insert(struct_name.clone(), reference);
+
+        let statement = Statement::Struct(StructDetail {
+            id: struct_id,
+            name: struct_name,
+            fields,
+        });
+        Ok(statement)
+    }
+
     fn parse_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         match self.lexer.peek() {
             Some(Token::Keyword(Keyword::Return)) => self.parse_return_statement(),
-            Some(Token::Keyword(Keyword::If)) => Ok(Statement::If(self.parse_if_statement(context)?)),
-            Some(Token::Keyword(Keyword::While)) => Ok(Statement::While(self.parse_while_statement(context)?)),
+            Some(Token::Keyword(Keyword::If)) => self.parse_if_statement(context),
+            Some(Token::Keyword(Keyword::While)) => self.parse_while_statement(context),
             Some(Token::Symbol(Symbol::LeftBrace)) => self.parse_block_statement(context),
-            Some(Token::Keyword(Keyword::Define)) => Ok(Statement::Define(self.parse_define_statement(context)?)),
-            Some(Token::Keyword(Keyword::Let)) => Ok(Statement::Let(self.parse_let_statement()?)),
+            Some(Token::Keyword(Keyword::Define)) => self.parse_define_statement(context),
+            Some(Token::Keyword(Keyword::Let)) => self.parse_let_statement(),
             Some(Token::Symbol(Symbol::Semicolon)) => self.parse_empty_statement(),
-            Some(Token::Keyword(Keyword::Using)) => {
-                let statement = self.parse_using_statement(context)?;
-                Ok(statement)
-            }
+            Some(Token::Keyword(Keyword::Using)) => self.parse_using_statement(context),
+            Some(Token::Keyword(Keyword::Struct)) => self.parse_struct_statement(),
             Some(_) => self.parse_expression_statement(),
             None => Err(CompileError::UnexpectedParseEOF),
         }

@@ -35,7 +35,7 @@ pub enum CompileError {
     UnexpectedParseEOF,
     UnexpectedToken(Token),
 
-    UnknownType(String),
+    UnknownType(Rc<Identifier>),
     UnknownPackage,
 
     // Semantics Errors
@@ -45,6 +45,14 @@ pub enum CompileError {
 
     // Type Errors
     ShouldBeFunctionType,
+    ShouldBeStructType,
+    FieldNotExist(Rc<Identifier>),
+    FieldTypeNotMatch {
+        field_name: Rc<Identifier>,
+        expected_type: Rc<Type>,
+        actual_type: Rc<Type>,
+    },
+    FieldMissing(Array<Identifier>),
 
     UndefinedUnaryExpression(Unary, Rc<Type>),
     UndefinedBinaryExpression(Binary, Rc<Type>, Rc<Type>),
@@ -141,6 +149,28 @@ impl CompileError {
             // Type Errors
             CompileError::ShouldBeFunctionType => {
                 panic!("should be a function type.")
+            }
+            CompileError::ShouldBeStructType => {
+                panic!("should be a struct type.")
+            }
+            CompileError::FieldNotExist(field_name) => {
+                panic!("field '{field_name}' does not exists.")
+            }
+            CompileError::FieldTypeNotMatch {
+                field_name,
+                expected_type,
+                actual_type,
+            } => {
+                panic!("field {field_name} type mismatch. expected type: {expected_type}, actual type: {actual_type}")
+            }
+            CompileError::FieldMissing(missing_fields) => {
+                let missing_fields = missing_fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .cloned()
+                    .collect::<Rc<_>>()
+                    .join(", ");
+                panic!("missing field(s): {missing_fields}")
             }
             CompileError::UndefinedUnaryExpression(operator, ty) => {
                 panic!("undefined unary expression: {operator} {ty}")

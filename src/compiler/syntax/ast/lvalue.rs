@@ -7,6 +7,7 @@ use super::expression::Expression;
 
 pub enum LValue {
     Id(Rc<Identifier>),
+    Access(Rc<LValue>, Rc<Identifier>),
 }
 
 impl LValue {
@@ -14,6 +15,7 @@ impl LValue {
     pub fn root(&self) -> Rc<Identifier> {
         match self {
             LValue::Id(id) => id.clone(),
+            LValue::Access(object, _) => object.root(),
         }
     }
 }
@@ -30,9 +32,13 @@ impl TryFrom<&Expression> for LValue {
     type Error = CompileError;
 
     fn try_from(expression: &Expression) -> Result<Self, Self::Error> {
-        match expression {
-            Expression::Identifier(id) => Ok(LValue::Id(id.clone())),
-            _ => Err(CompileError::IllegalLValue),
-        }
+        let lvalue = match expression {
+            Expression::Identifier(id) => LValue::Id(id.clone()),
+            Expression::Access(object, _, field) => {
+                LValue::Access(LValue::try_from(object.as_ref())?.into(), field.clone())
+            }
+            _ => return Err(CompileError::IllegalLValue),
+        };
+        Ok(lvalue)
     }
 }
