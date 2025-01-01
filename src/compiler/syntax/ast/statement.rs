@@ -1,11 +1,14 @@
 use std::fmt;
 use std::rc::Rc;
 
+use crate::compiler::context::StructId;
 use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
 use crate::util::pretty_format::indent;
 
+use super::crumb::Field;
 use super::crumb::FunctionPrototype;
+use super::crumb::Identifier;
 use super::crumb::Variable;
 use super::expression::Expression;
 use super::package::UsingPath;
@@ -27,6 +30,13 @@ pub struct DefineDetail {
     pub body: Rc<Statement>,
 }
 
+#[derive(Clone)]
+pub struct StructDetail {
+    pub id: StructId,
+    pub name: Rc<Identifier>,
+    pub fields: Array<Field>,
+}
+
 pub enum Statement {
     Empty,
     Block(Array<Statement>),
@@ -37,6 +47,7 @@ pub enum Statement {
     While(WhileDetail),
     Define(DefineDetail),
     Using(UsingPath),
+    Struct(StructDetail),
 }
 
 impl PrettyFormat for Statement {
@@ -111,6 +122,14 @@ impl PrettyFormat for Statement {
             }
             Statement::Using(path) => {
                 writeln!(f, "{indent}Using {path}")?;
+            }
+            Statement::Struct(StructDetail { id, name, fields }) => {
+                writeln!(f, "{indent}Struct {name}({id})")?;
+                fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .try_for_each(|field| field.pretty_format(f, indentation_num + 1))?;
+                writeln!(f, "{indent}End")?;
             }
         };
         Ok(())

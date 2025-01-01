@@ -8,6 +8,8 @@ use crate::compiler::err::CompileError;
 use crate::compiler::scope::Scope;
 use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::Document;
+use crate::compiler::syntax::ast::crumb::Field;
+use crate::compiler::syntax::ast::crumb::FieldInit;
 use crate::compiler::syntax::ast::crumb::FunctionPrototype;
 use crate::compiler::syntax::ast::crumb::Parameter;
 use crate::compiler::syntax::ast::crumb::Variable;
@@ -20,17 +22,18 @@ use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::IfDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
 use crate::compiler::syntax::ast::statement::Statement;
+use crate::compiler::syntax::ast::statement::StructDetail;
 use crate::compiler::syntax::ast::statement::WhileDetail;
 use crate::compiler::syntax::ast::ty::Type;
 use crate::sys_error;
 use crate::util::common::Array;
 
-type TypeScope = Scope<Rc<Type>>;
+type ReferenceScope = Scope<Rc<Reference>>;
 
 pub struct TypeInferrer {
     unary_operation_type_map: HashMap<(Unary, Rc<Type>), Rc<Type>>,
     binary_operation_type_map: HashMap<(Binary, Rc<Type>, Rc<Type>), Rc<Type>>,
-    scope: TypeScope,
+    scope: ReferenceScope,
 }
 
 impl TypeInferrer {
@@ -39,7 +42,7 @@ impl TypeInferrer {
         TypeInferrer {
             unary_operation_type_map: HashMap::new(),
             binary_operation_type_map: HashMap::new(),
-            scope: TypeScope::new(),
+            scope: ReferenceScope::new(),
         }
     }
 
@@ -65,8 +68,10 @@ impl TypeInferrer {
 
     fn infer_lvalue(&self, lvalue: &Rc<Expression>) -> Result<(Rc<Type>, Rc<Expression>), CompileError> {
         match lvalue.as_ref() {
-            Expression::Identifier(identifier) => match self.scope.lookup(identifier)? {
-                Some(var_type) => Ok((var_type, Expression::Identifier(identifier.clone()).into())),
+            Expression::Identifier(identifier) => match self.scope.lookup(identifier)?.as_ref().map(Rc::as_ref) {
+                Some(Reference::Binding(var_type)) => {
+                    Ok((var_type.clone(), Expression::Identifier(identifier.clone()).into()))
+                }
                 _ => Err(CompileError::UndeclaredIdentifier(identifier.clone())),
             },
             _ => Err(CompileError::IllegalLValue),
@@ -92,11 +97,12 @@ impl TypeInferrer {
     fn infer_expression(&self, expression: &Rc<Expression>) -> Result<(Rc<Expression>, Rc<Type>), CompileError> {
         let result: (Rc<Expression>, Rc<Type>) = match expression.as_ref() {
             Expression::Identifier(identifier) => {
-                let id_type = self.scope.lookup(identifier)?;
-                let Some(id_type) = id_type else {
+                let reference = self.scope.lookup(identifier)?;
+                let reference = reference.as_ref().map(Rc::as_ref);
+                let Some(Reference::Binding(id_type)) = reference else {
                     return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
                 };
-                (Expression::Identifier(identifier.clone()).into(), id_type)
+                (Expression::Identifier(identifier.clone()).into(), id_type.clone())
             }
             Expression::IntLiteral(value) => (Expression::IntLiteral(*value).into(), Type::Int(BitWidth::Bit32).into()),
             Expression::CharLiteral(literal) => (
@@ -137,6 +143,9 @@ impl TypeInferrer {
                 let Some(function_type) = self.scope.lookup(function_id)? else {
                     return Err(CompileError::UndeclaredIdentifier(function_id.clone()));
                 };
+                let Reference::Binding(function_type) = function_type.as_ref() else {
+                    return Err(CompileError::ShouldBeFunctionType);
+                };
                 let Type::Function {
                     return_type,
                     parameter_types,
@@ -171,6 +180,54 @@ impl TypeInferrer {
                     to_type.clone(),
                 )
             }
+            Expression::StructSpawn(name, fields) => {
+                let reference = self.scope.lookup(name)?;
+                let reference = reference.as_ref().map(Rc::as_ref);
+                let Some(Reference::StructDef(struct_id, _, field_defs)) = reference else {
+                    return Err(CompileError::UnknownType(name.clone()));
+                };
+                let mut field_map = field_defs
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|Field(field_name, field_type)| (field_name.clone(), field_type.clone()))
+                    .collect::<HashMap<_, _>>();
+
+                let fields = fields
+                    .iter()
+                    .map(Rc::as_ref)
+                    .map(|FieldInit(field_name, field_expression)| {
+                        let Some(expected_type) = field_map.get(field_name).cloned() else {
+                            return Err(CompileError::FieldNotExist(field_name.clone()));
+                        };
+                        field_map.remove(field_name);
+                        let (field_expression, actual_type) = self.infer_expression(field_expression)?;
+                        if expected_type != actual_type {
+                            return Err(CompileError::FieldTypeNotMatch {
+                                field_name: field_name.clone(),
+                                expected_type,
+                                actual_type,
+                            });
+                        }
+                        let field = FieldInit(field_name.clone(), field_expression);
+                        Ok(field.into())
+                    })
+                    .collect::<Result<Array<_>, _>>()?;
+
+                if !field_map.is_empty() {
+                    let missing_fields = field_map.keys().cloned().collect();
+                    return Err(CompileError::FieldMissing(missing_fields));
+                }
+
+                let spawn_type = Type::Struct {
+                    id: *struct_id,
+                    name: name.clone(),
+                    fields: field_defs.clone(),
+                };
+                (
+                    Expression::StructSpawn(name.clone(), fields.clone()).into(),
+                    spawn_type.into(),
+                )
+            }
         };
         Ok(result)
     }
@@ -188,6 +245,9 @@ impl TypeInferrer {
         };
         let function_name = self.scope.current_function()?;
         let function_type = self.scope.lookup(&function_name)?.unwrap();
+        let Reference::Binding(function_type) = function_type.as_ref() else {
+            return Err(CompileError::ShouldBeFunctionType);
+        };
         let Type::Function {
             return_type: expected_type,
             parameter_types: _,
@@ -267,10 +327,11 @@ impl TypeInferrer {
                 expression_type,
             });
         }
+        let reference = Reference::Binding(lvalue_type.clone()).into();
         if self.scope.is_global()? {
-            self.scope.declare(identifier.clone(), lvalue_type.clone())?;
+            self.scope.declare(identifier.clone(), reference)?;
         } else {
-            self.scope.overwrite(identifier.clone(), lvalue_type.clone())?;
+            self.scope.overwrite(identifier.clone(), reference)?;
         }
         Ok(Statement::Let(LetDetail(
             Variable(identifier.clone(), lvalue_type, *mutability),
@@ -302,7 +363,8 @@ impl TypeInferrer {
             .map(Rc::as_ref)
             .zip(parameter_types.iter())
             .try_for_each(|(Parameter(identifier), parameter_type)| {
-                self.scope.declare(identifier.clone(), parameter_type.clone())
+                let reference = Reference::Binding(parameter_type.clone()).into();
+                self.scope.declare(identifier.clone(), reference)
             })?;
         let body = self.infer_statement(context, body)?;
         self.scope.leave(Tag::Function(identifier.clone()))?;
@@ -359,12 +421,13 @@ impl TypeInferrer {
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let used_document_id = context.id_map.get(document_path).unwrap();
                 let reference_map = context.reference_map.get(used_document_id).unwrap();
-                let Some(Reference::Binding(symbol_type)) = reference_map.get(symbol).map(Rc::as_ref) else {
+                let Some(reference) = reference_map.get(symbol) else {
                     sys_error!("used symbol must exist");
                 };
-                self.scope.declare(symbol.clone(), symbol_type.clone())?;
+                self.scope.declare(symbol.clone(), reference.clone())?;
                 Statement::Using(UsingPath(document_path.clone(), symbol.clone()))
             }
+            Statement::Struct(struct_detail) => Statement::Struct(struct_detail.clone()),
         };
         Ok(result.into())
     }
@@ -377,11 +440,28 @@ impl TypeInferrer {
             function_type,
         }: &FunctionPrototype,
     ) -> Result<(), CompileError> {
-        self.scope.declare(identifier.clone(), function_type.clone())?;
+        let reference = Reference::Binding(function_type.clone()).into();
+        self.scope.declare(identifier.clone(), reference)?;
         Ok(())
     }
 
-    fn pre_scan_global_items(&mut self, document: &Document) -> Result<(), CompileError> {
+    fn pre_scan_struct(
+        &mut self,
+        name: Rc<String>,
+        context: &Context,
+        document_id: DocumentId,
+    ) -> Result<(), CompileError> {
+        let reference = context.reference_map.get(&document_id).unwrap().get(&name).unwrap();
+        self.scope.declare(name, reference.clone())?;
+        Ok(())
+    }
+
+    fn pre_scan_global_items(
+        &mut self,
+        document: &Document,
+        context: &Context,
+        document_id: DocumentId,
+    ) -> Result<(), CompileError> {
         document
             .statements
             .iter()
@@ -393,6 +473,9 @@ impl TypeInferrer {
                 | Statement::If(_)
                 | Statement::While(_) => Err(CompileError::ProcessInGlobal),
                 Statement::Let(_) | Statement::Using(_) => Ok(()),
+                Statement::Struct(StructDetail { name, .. }) => {
+                    self.pre_scan_struct(name.clone(), context, document_id)
+                }
                 Statement::Define(define_detail) => self.pre_scan_function_prototype(&define_detail.prototype),
             })
     }
@@ -467,7 +550,7 @@ impl TypeInferrer {
         self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();
         self.scope.enter(Tag::Global);
-        self.pre_scan_global_items(&document)?;
+        self.pre_scan_global_items(&document, context, id)?;
         let statements = document
             .statements
             .iter()

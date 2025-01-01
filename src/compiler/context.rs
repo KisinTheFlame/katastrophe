@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::define_id_generator;
 
 use super::ir::instruction::Instruction;
-use super::ir::instruction::IrModel;
+use super::ir::instruction::IrReference;
 use super::syntax::ast::Document;
 use super::syntax::ast::crumb::Identifier;
 use super::syntax::ast::crumb::Mutability;
@@ -12,6 +12,7 @@ use super::syntax::ast::package::DocumentPath;
 use super::syntax::ast::reference::Reference;
 
 pub type DocumentId = u32;
+pub type StructId = u32;
 
 pub struct Context {
     pub id_map: HashMap<Rc<DocumentPath>, DocumentId>,
@@ -19,7 +20,7 @@ pub struct Context {
     pub document_map: HashMap<DocumentId, Document>,
     pub reference_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Rc<Reference>>>,
     pub mutability_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Mutability>>,
-    pub ir_model_map: HashMap<DocumentId, HashMap<Rc<Identifier>, IrModel>>,
+    pub ir_model_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Rc<IrReference>>>,
     pub instruction: HashMap<DocumentId, Rc<Instruction>>,
 }
 
@@ -45,3 +46,4 @@ impl Default for Context {
 }
 
 define_id_generator!(document, pub);
+define_id_generator!(struct, pub);

@@ -8,6 +8,7 @@ use crate::util::pretty_format::indent;
 
 use crate::compiler::syntax::ast::ty::Type;
 
+use super::crumb::FieldInit;
 use super::crumb::Identifier;
 use super::operator::Binary;
 use super::operator::Unary;
@@ -27,6 +28,8 @@ pub enum Expression {
     Call(Rc<Identifier>, Array<Expression>),
 
     Cast(Rc<Expression>, Rc<Type>, Rc<Type>),
+
+    StructSpawn(Rc<Identifier>, Array<FieldInit>),
 }
 
 impl PrettyFormat for Expression {
@@ -66,6 +69,12 @@ impl PrettyFormat for Expression {
             Expression::Cast(expression, from_type, to_type) => {
                 writeln!(f, "{indentation}As from {from_type} to {to_type}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
+            }
+            Expression::StructSpawn(name, fields) => {
+                writeln!(f, "{indentation}Struct Spawn {name}")?;
+                fields
+                    .iter()
+                    .try_for_each(|field| field.pretty_format(f, indentation_num + 1))?;
             }
         }
         Ok(())

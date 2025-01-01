@@ -50,6 +50,7 @@ impl Lexer {
             let token = match c {
                 '0'..='9' => Some(self.digest_number()?),
                 'a'..='z' | 'A'..='Z' | '_' => Some(self.digest_identifier_or_keyword_or_bool()?),
+                '@' => Some(self.digest_spawning()?),
                 '\'' => Some(self.digest_character()?),
                 '#' => {
                     self.digest_comment();
@@ -143,6 +144,21 @@ impl Lexer {
             }
         };
         Ok(token)
+    }
+
+    fn digest_spawning(&mut self) -> Result<Token, CompileError> {
+        self.assert('@');
+        let identifier = match self.digest_identifier_or_keyword_or_bool()? {
+            Token::Identifier(identifier) => identifier,
+            Token::BoolLiteral(literal) => {
+                return Err(CompileError::UnexpectedToken(Token::BoolLiteral(literal)));
+            }
+            Token::Keyword(keyword) => {
+                return Err(CompileError::UnexpectedToken(Token::Keyword(keyword)));
+            }
+            _ => return Err(CompileError::UnexpectedParseEOF),
+        };
+        Ok(Token::Spawning(identifier))
     }
 
     fn expect(&mut self, expected: char) -> bool {
@@ -255,7 +271,7 @@ impl Lexer {
                 if self.expect(':') {
                     Symbol::DoubleColon
                 } else {
-                    return Err(CompileError::UnexpectedCharacter(':'));
+                    Symbol::Colon
                 }
             }
             c => {
