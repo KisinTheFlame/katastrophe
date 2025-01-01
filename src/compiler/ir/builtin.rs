@@ -7,8 +7,8 @@ use crate::compiler::err::CompileError;
 
 use super::instruction::Instruction;
 use super::instruction::IrFunctionPrototype;
-use super::instruction::Value;
 use super::instruction::ir_type::IrType;
+use super::instruction::value::Value;
 
 /// # Errors
 pub fn generate_libc_function() -> CompileResult<Instruction> {

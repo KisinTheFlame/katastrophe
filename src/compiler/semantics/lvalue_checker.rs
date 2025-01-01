@@ -49,7 +49,7 @@ impl LValueChecker {
 
     fn check_statement(&mut self, context: &Context, statement: &Statement) -> CompileResult<()> {
         match statement {
-            Statement::Empty | Statement::Return(_) => Ok(()),
+            Statement::Empty | Statement::Return(_) | Statement::Struct(_) => Ok(()),
             Statement::Block(statements) => statements
                 .iter()
                 .try_for_each(|statement| self.check_statement(context, statement)),
@@ -113,8 +113,9 @@ impl LValueChecker {
                 let Some(reference) = context.reference_map.get(id).unwrap().get(symbol) else {
                     sys_error!("used symbol must exist");
                 };
-                let Reference::Binding(_, mutability) = reference.as_ref();
-                self.scope.declare(symbol.clone(), *mutability)?;
+                if let Reference::Binding(_, mutability) = reference.as_ref() {
+                    self.scope.declare(symbol.clone(), *mutability)?;
+                }
                 Ok(())
             }
         }

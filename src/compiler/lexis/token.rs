@@ -1,6 +1,8 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+use crate::compiler::syntax::ast::crumb::Identifier;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Keyword {
     Define,
@@ -13,6 +15,7 @@ pub enum Keyword {
     As,
     Mut,
     Builtin,
+    Struct,
 }
 
 static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
@@ -28,6 +31,7 @@ static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
             ("as", Keyword::As),
             ("mut", Keyword::Mut),
             ("builtin", Keyword::Builtin),
+            ("struct", Keyword::Struct),
         ]
         .map(|(s, k)| (s, k)),
     )
@@ -78,15 +82,17 @@ pub enum Symbol {
     RightBrace,
 
     Comma,
+    Colon,
     Semicolon,
     DoubleColon,
+    Dot,
 
     Arrow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Identifier(String),
+    Identifier(Identifier),
     IntLiteral(i32),
     FloatLiteral(f64),
     CharLiteral(char),
@@ -94,4 +100,6 @@ pub enum Token {
 
     Keyword(Keyword),
     Symbol(Symbol),
+
+    Spawning(Identifier),
 }

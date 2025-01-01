@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::CompileResult;
 use crate::compiler::context::Context;
 use crate::compiler::err::CompileError;
-use crate::compiler::ir::instruction::Value;
+use crate::compiler::ir::instruction::value::Value;
 use crate::compiler::syntax::parser::Parser;
 use crate::util::common::Array;
 
