@@ -140,15 +140,6 @@ pub enum Instruction {
         left: Rc<Value>,
         right: Rc<Value>,
     },
-    Copy {
-        data_type: Rc<IrType>,
-        from: Rc<Value>,
-        to: Rc<Value>,
-    },
-    Bitcast {
-        from: IrModel,
-        to: IrModel,
-    },
     Truncate {
         from: IrModel,
         to: IrModel,
@@ -242,21 +233,6 @@ impl Instruction {
         let indentation = indent(indentation_num);
         writeln!(f, "{indentation}{receiver}call {return_type} {id}({arguments})")
     }
-
-    fn format_copy(&self, f: &mut fmt::Formatter, indentation_num: usize) -> fmt::Result {
-        let Instruction::Copy { data_type, from, to } = &self else {
-            return Err(fmt::Error);
-        };
-        let from_value = from.clone();
-        let from_type = data_type.clone();
-        let to_value = to.clone();
-        let to_type = data_type.clone();
-        Instruction::Bitcast {
-            from: (from_value, from_type),
-            to: (to_value, to_type),
-        }
-        .pretty_format(f, indentation_num)
-    }
 }
 
 impl PrettyFormat for Instruction {
@@ -304,20 +280,6 @@ impl PrettyFormat for Instruction {
                 right,
             } => {
                 writeln!(f, "{indentation}{result} = {operator} {data_type} {left}, {right}")
-            }
-            Instruction::Copy {
-                data_type: _,
-                from: _,
-                to: _,
-            } => self.format_copy(f, indentation_num),
-            Instruction::Bitcast {
-                from: (from_value, from_type),
-                to: (to_value, to_type),
-            } => {
-                writeln!(
-                    f,
-                    "{indentation}{to_value} = bitcast {from_type} {from_value} to {to_type}"
-                )
             }
             Instruction::Truncate {
                 from: (from_value, from_type),
