@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use crate::compiler::err::CompileError;
 
-use super::{crumb::Identifier, expression::Expression};
+use super::crumb::Identifier;
+use super::expression::Expression;
 
 pub enum LValue {
     Id(Rc<Identifier>),
