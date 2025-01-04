@@ -10,6 +10,7 @@ use crate::compiler::syntax::ast::crumb::Mutability;
 use crate::compiler::syntax::ast::crumb::Parameter;
 use crate::compiler::syntax::ast::crumb::Variable;
 use crate::compiler::syntax::ast::expression::Expression;
+use crate::compiler::syntax::ast::lvalue::LValue;
 use crate::compiler::syntax::ast::operator::Binary;
 use crate::compiler::syntax::ast::package::UsingPath;
 use crate::compiler::syntax::ast::reference::Reference;
@@ -118,26 +119,17 @@ impl MutabilityChecker {
         }
     }
 
-    fn check_lvalue(&self, lvalue: &Expression) -> Result<(), CompileError> {
-        match lvalue {
-            Expression::Identifier(identifier) => {
-                let Some(mutability) = self.scope.lookup(identifier)? else {
-                    return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
-                };
-                if mutability == Mutability::Mutable {
-                    Ok(())
-                } else {
-                    Err(CompileError::AssigningImmutableVariable(identifier.clone()))
-                }
-            }
-            Expression::IntLiteral(_)
-            | Expression::CharLiteral(_)
-            | Expression::FloatLiteral(_)
-            | Expression::BoolLiteral(_)
-            | Expression::Unary(_, _, _)
-            | Expression::Binary(_, _, _, _)
-            | Expression::Call(_, _)
-            | Expression::Cast(_, _, _) => Err(CompileError::IllegalLValue),
+    fn check_lvalue(&self, lvalue_expression: &Expression) -> Result<(), CompileError> {
+        let lvalue = LValue::try_from(lvalue_expression)?;
+        let identifier = lvalue.root();
+
+        let Some(mutability) = self.scope.lookup(&identifier)? else {
+            return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
+        };
+        if mutability == Mutability::Mutable {
+            Ok(())
+        } else {
+            Err(CompileError::AssigningImmutableVariable(identifier.clone()))
         }
     }
 }
