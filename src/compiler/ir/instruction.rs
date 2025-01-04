@@ -2,6 +2,8 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
+use memory::Memory;
+
 use crate::compiler::scope::Scope;
 use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
@@ -10,6 +12,7 @@ use crate::util::pretty_format::indent;
 use self::ir_type::IrType;
 
 pub mod ir_type;
+pub mod memory;
 
 pub type IrId = String;
 
@@ -24,8 +27,7 @@ pub enum Value {
     ImmediateI32(i32),
     ImmediateI8(i8),
     ImmediateBool(bool),
-    StackPointer(IrId),
-    GlobalPointer(IrId),
+    Pointer(Rc<Memory>),
     Parameter(IrId),
     Function(IrId),
     Label(IrId),
@@ -37,7 +39,7 @@ impl Display for Value {
             Value::Void => {
                 panic!("void")
             }
-            Value::Register(id) | Value::StackPointer(id) | Value::Parameter(id) => {
+            Value::Register(id) | Value::Parameter(id) => {
                 write!(f, "%{id}")
             }
             Value::ImmediateI32(value) => write!(f, "{value}"),
@@ -46,7 +48,8 @@ impl Display for Value {
                 let value = i32::from(*value);
                 write!(f, "{value}")
             }
-            Value::GlobalPointer(id) | Value::Function(id) => write!(f, "@{id}"),
+            Value::Function(id) => write!(f, "@{id}"),
+            Value::Pointer(memory) => write!(f, "{memory}"),
             Value::Label(id) => write!(f, "{id}"),
         }
     }

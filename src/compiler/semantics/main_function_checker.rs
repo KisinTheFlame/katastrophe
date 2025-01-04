@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::CompileResult;
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
@@ -9,7 +10,7 @@ use crate::compiler::syntax::ast::ty::Type;
 use crate::sys_error;
 
 /// # Errors
-pub fn main_function_check(context: &Context, main_document_id: DocumentId) -> Result<(), CompileError> {
+pub fn main_function_check(context: &Context, main_document_id: DocumentId) -> CompileResult<()> {
     let Some(reference_map) = context.reference_map.get(&main_document_id) else {
         sys_error!("reference map must exist");
     };

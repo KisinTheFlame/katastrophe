@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::CompileResult;
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
@@ -43,7 +44,7 @@ impl TypeInferrer {
         }
     }
 
-    fn infer_binary_operation_type(&self, index: &(Binary, Rc<Type>, Rc<Type>)) -> Result<Rc<Type>, CompileError> {
+    fn infer_binary_operation_type(&self, index: &(Binary, Rc<Type>, Rc<Type>)) -> CompileResult<Rc<Type>> {
         let (operator, left_type, right_type) = index;
         self.binary_operation_type_map
             .get(index)
@@ -55,7 +56,7 @@ impl TypeInferrer {
             ))
     }
 
-    fn infer_unary_operation_type(&self, index: &(Unary, Rc<Type>)) -> Result<Rc<Type>, CompileError> {
+    fn infer_unary_operation_type(&self, index: &(Unary, Rc<Type>)) -> CompileResult<Rc<Type>> {
         let (operator, ty) = index;
         self.unary_operation_type_map
             .get(index)
@@ -63,7 +64,7 @@ impl TypeInferrer {
             .ok_or(CompileError::UndefinedUnaryExpression(*operator, ty.clone()))
     }
 
-    fn infer_lvalue(&self, lvalue: &Rc<Expression>) -> Result<(Rc<Type>, Rc<Expression>), CompileError> {
+    fn infer_lvalue(&self, lvalue: &Rc<Expression>) -> CompileResult<(Rc<Type>, Rc<Expression>)> {
         match lvalue.as_ref() {
             Expression::Identifier(identifier) => match self.scope.lookup(identifier)? {
                 Some(var_type) => Ok((var_type, Expression::Identifier(identifier.clone()).into())),
@@ -73,11 +74,7 @@ impl TypeInferrer {
         }
     }
 
-    fn infer_assignment(
-        &self,
-        lvalue: &Rc<Expression>,
-        expression: &Rc<Expression>,
-    ) -> Result<Rc<Expression>, CompileError> {
+    fn infer_assignment(&self, lvalue: &Rc<Expression>, expression: &Rc<Expression>) -> CompileResult<Rc<Expression>> {
         let (lvalue_type, lvalue) = self.infer_lvalue(lvalue)?;
         let (expression, expression_type) = self.infer_expression(expression)?;
         if *lvalue_type != *expression_type {
@@ -89,7 +86,7 @@ impl TypeInferrer {
         Ok(Expression::Binary(Binary::Assign, lvalue_type, lvalue, expression).into())
     }
 
-    fn infer_expression(&self, expression: &Rc<Expression>) -> Result<(Rc<Expression>, Rc<Type>), CompileError> {
+    fn infer_expression(&self, expression: &Rc<Expression>) -> CompileResult<(Rc<Expression>, Rc<Type>)> {
         let result: (Rc<Expression>, Rc<Type>) = match expression.as_ref() {
             Expression::Identifier(identifier) => {
                 let id_type = self.scope.lookup(identifier)?;
@@ -175,10 +172,7 @@ impl TypeInferrer {
         Ok(result)
     }
 
-    fn infer_return_statement(
-        &self,
-        return_value: Option<Rc<Expression>>,
-    ) -> Result<Option<Rc<Expression>>, CompileError> {
+    fn infer_return_statement(&self, return_value: Option<Rc<Expression>>) -> CompileResult<Option<Rc<Expression>>> {
         let (return_value, return_type) = match return_value {
             Some(return_value) => {
                 let (return_value, return_type) = self.infer_expression(&return_value)?;
@@ -213,7 +207,7 @@ impl TypeInferrer {
             true_body,
             false_body,
         }: &IfDetail,
-    ) -> Result<Statement, CompileError> {
+    ) -> CompileResult<Statement> {
         let (condition, condition_type) = self.infer_expression(condition)?;
         if *condition_type != Type::Bool {
             return Err(CompileError::ConditionNeedBool);
@@ -241,7 +235,7 @@ impl TypeInferrer {
         &mut self,
         context: &Context,
         WhileDetail(condition, body): &WhileDetail,
-    ) -> Result<Statement, CompileError> {
+    ) -> CompileResult<Statement> {
         let (condition, condition_type) = self.infer_expression(condition)?;
         if *condition_type != Type::Bool {
             return Err(CompileError::ConditionNeedBool);
@@ -255,7 +249,7 @@ impl TypeInferrer {
     fn infer_let_statement(
         &mut self,
         LetDetail(Variable(identifier, lvalue_type, mutability), expression): &LetDetail,
-    ) -> Result<Statement, CompileError> {
+    ) -> CompileResult<Statement> {
         let (expression, expression_type) = self.infer_expression(expression)?;
         let lvalue_type = match lvalue_type.as_ref() {
             Type::Unknown => expression_type.clone(),
@@ -283,7 +277,7 @@ impl TypeInferrer {
         context: &Context,
         prototype: &Rc<FunctionPrototype>,
         body: &Rc<Statement>,
-    ) -> Result<Statement, CompileError> {
+    ) -> CompileResult<Statement> {
         let FunctionPrototype {
             identifier,
             parameters,
@@ -322,7 +316,7 @@ impl TypeInferrer {
         }))
     }
 
-    fn infer_statement(&mut self, context: &Context, statement: &Rc<Statement>) -> Result<Rc<Statement>, CompileError> {
+    fn infer_statement(&mut self, context: &Context, statement: &Rc<Statement>) -> CompileResult<Rc<Statement>> {
         let result = match statement.as_ref() {
             Statement::Empty => Statement::Empty,
             Statement::Block(statements) => {
@@ -376,12 +370,12 @@ impl TypeInferrer {
             parameters: _,
             function_type,
         }: &FunctionPrototype,
-    ) -> Result<(), CompileError> {
+    ) -> CompileResult<()> {
         self.scope.declare(identifier.clone(), function_type.clone())?;
         Ok(())
     }
 
-    fn pre_scan_global_items(&mut self, document: &Document) -> Result<(), CompileError> {
+    fn pre_scan_global_items(&mut self, document: &Document) -> CompileResult<()> {
         document
             .statements
             .iter()
@@ -460,7 +454,7 @@ impl TypeInferrer {
     }
 
     /// # Errors
-    pub fn infer(&mut self, context: &mut Context, id: DocumentId) -> Result<(), CompileError> {
+    pub fn infer(&mut self, context: &mut Context, id: DocumentId) -> CompileResult<()> {
         let Some(document) = context.document_map.remove(&id) else {
             sys_error!("document must exist");
         };

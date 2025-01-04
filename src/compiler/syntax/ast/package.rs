@@ -3,6 +3,7 @@ use std::fmt::{self};
 use std::fs;
 use std::rc::Rc;
 
+use crate::CompileResult;
 use crate::compiler::context::Context;
 use crate::compiler::err::CompileError;
 use crate::compiler::ir::instruction::Value;
@@ -41,7 +42,7 @@ impl Display for UsingPath {
 }
 
 /// # Errors
-pub fn load_package_path(context: &mut Context, path: Rc<DocumentPath>) -> Result<(), CompileError> {
+pub fn load_package_path(context: &mut Context, path: Rc<DocumentPath>) -> CompileResult<()> {
     if context.id_map.contains_key(&path) {
         return Ok(());
     }
@@ -74,7 +75,7 @@ fn get_std_package_path(document_path: &Rc<DocumentPath>) -> String {
     format!("{STD_ROOT}/{dir}")
 }
 
-fn load_package(context: &mut Context, path: Rc<DocumentPath>) -> Result<(), CompileError> {
+fn load_package(context: &mut Context, path: Rc<DocumentPath>) -> CompileResult<()> {
     let file_path = get_package_path(&path) + ".katas";
     let Ok(code) = fs::read_to_string(file_path) else {
         return Err(CompileError::UnknownPackage);

@@ -18,6 +18,14 @@ impl LValue {
     }
 }
 
+impl TryFrom<Rc<Expression>> for LValue {
+    type Error = CompileError;
+
+    fn try_from(value: Rc<Expression>) -> Result<Self, Self::Error> {
+        LValue::try_from(value.as_ref())
+    }
+}
+
 impl TryFrom<&Expression> for LValue {
     type Error = CompileError;
 
