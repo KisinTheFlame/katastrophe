@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use crate::CompileResult;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
@@ -22,18 +23,18 @@ use crate::sys_error;
 
 type MutabilityScope = Scope<Mutability>;
 
-pub struct MutabilityChecker {
+pub struct LValueChecker {
     scope: MutabilityScope,
 }
 
-impl MutabilityChecker {
+impl LValueChecker {
     #[must_use]
-    pub fn new() -> MutabilityChecker {
-        MutabilityChecker { scope: Scope::new() }
+    pub fn new() -> LValueChecker {
+        LValueChecker { scope: Scope::new() }
     }
 
     /// # Errors
-    pub fn check_document(&mut self, context: &Context, document_id: DocumentId) -> Result<(), CompileError> {
+    pub fn check_document(&mut self, context: &Context, document_id: DocumentId) -> CompileResult<()> {
         let Some(document) = context.document_map.get(&document_id) else {
             sys_error!("document must exist");
         };
@@ -46,7 +47,7 @@ impl MutabilityChecker {
         Ok(())
     }
 
-    fn check_statement(&mut self, context: &Context, statement: &Statement) -> Result<(), CompileError> {
+    fn check_statement(&mut self, context: &Context, statement: &Statement) -> CompileResult<()> {
         match statement {
             Statement::Empty | Statement::Return(_) => Ok(()),
             Statement::Block(statements) => statements
@@ -119,7 +120,7 @@ impl MutabilityChecker {
         }
     }
 
-    fn check_lvalue(&self, lvalue_expression: &Expression) -> Result<(), CompileError> {
+    fn check_lvalue(&self, lvalue_expression: &Expression) -> CompileResult<()> {
         let lvalue = LValue::try_from(lvalue_expression)?;
         let identifier = lvalue.root();
 
@@ -134,7 +135,7 @@ impl MutabilityChecker {
     }
 }
 
-impl Default for MutabilityChecker {
+impl Default for LValueChecker {
     fn default() -> Self {
         Self::new()
     }

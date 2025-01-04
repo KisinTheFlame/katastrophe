@@ -3,6 +3,7 @@ use std::fmt::{self};
 use std::hash::Hash;
 use std::rc::Rc;
 
+use crate::CompileResult;
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::err::CompileError;
 use crate::util::common::Array;
@@ -81,7 +82,7 @@ impl Display for Type {
 impl TryFrom<String> for Type {
     type Error = CompileError;
 
-    fn try_from(value: String) -> Result<Type, CompileError> {
+    fn try_from(value: String) -> CompileResult<Type> {
         match value.as_str() {
             "void" => Ok(Type::Never),
             "i32" => Ok(Type::Int(BitWidth::Bit32)),

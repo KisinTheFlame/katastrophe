@@ -7,7 +7,7 @@ use compiler::err::CompileError;
 use compiler::ir::builtin::generate_entry;
 use compiler::ir::builtin::generate_libc_function;
 use compiler::ir::translator::Translator;
-use compiler::semantics::lvalue_checker::MutabilityChecker;
+use compiler::semantics::lvalue_checker::LValueChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;
 use compiler::syntax::ast::package::DocumentPath;
 use indoc::formatdoc;
@@ -20,8 +20,10 @@ pub mod compiler;
 pub mod constants;
 pub mod util;
 
+pub type CompileResult<T> = Result<T, CompileError>;
+
 /// # Errors
-pub fn syntax_analyze(context: &mut Context, code: &str) -> Result<u32, CompileError> {
+pub fn syntax_analyze(context: &mut Context, code: &str) -> CompileResult<u32> {
     let document_path = DocumentPath([Rc::new(String::from("self"))].into()).into();
     let mut parser = Parser::new(document_path, code);
     let main_document_id = parser.parse_document(context)?;
@@ -29,23 +31,23 @@ pub fn syntax_analyze(context: &mut Context, code: &str) -> Result<u32, CompileE
 }
 
 /// # Errors
-pub fn type_infer(context: &mut Context, ids: &Arr<u32>) -> Result<(), CompileError> {
+pub fn type_infer(context: &mut Context, ids: &Arr<u32>) -> CompileResult<()> {
     let mut type_inferrer = TypeInferrer::new();
     ids.iter().try_for_each(|id| type_inferrer.infer(context, *id))?;
     Ok(())
 }
 
 /// # Errors
-pub fn mutability_check(context: &Context, ids: &Arr<u32>) -> Result<(), CompileError> {
-    let mut mutability_checker = MutabilityChecker::new();
+pub fn lvalue_check(context: &Context, ids: &Arr<u32>) -> CompileResult<()> {
+    let mut lvalue_checker = LValueChecker::new();
     ids.iter()
-        .try_for_each(|id| mutability_checker.check_document(context, *id))?;
+        .try_for_each(|id| lvalue_checker.check_document(context, *id))?;
     Ok(())
 }
 
 /// # Errors
 /// # Panics
-pub fn ir_translate(context: &mut Context, ids: &Arr<u32>) -> Result<(), CompileError> {
+pub fn ir_translate(context: &mut Context, ids: &Arr<u32>) -> CompileResult<()> {
     let mut id_translators = ids
         .iter()
         .map(|id| {
@@ -64,7 +66,7 @@ pub fn ir_translate(context: &mut Context, ids: &Arr<u32>) -> Result<(), Compile
 
 /// # Errors
 /// # Panics
-pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> Result<String, CompileError> {
+pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> CompileResult<String> {
     let ir = ids
         .iter()
         .map(|id| {

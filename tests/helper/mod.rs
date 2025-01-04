@@ -2,13 +2,13 @@ use std::fs;
 use std::process::Command;
 use std::rc::Rc;
 
+use katastrophe::CompileResult;
 use katastrophe::assemble;
 use katastrophe::compiler::context::Context;
-use katastrophe::compiler::err::CompileError;
 use katastrophe::compiler::semantics::main_function_checker::main_function_check;
 use katastrophe::ir_generate;
 use katastrophe::ir_translate;
-use katastrophe::mutability_check;
+use katastrophe::lvalue_check;
 use katastrophe::syntax_analyze;
 use katastrophe::type_infer;
 use katastrophe::util::file::gen_tmp_exe_path;
@@ -59,14 +59,14 @@ fn test_output(source_code: &str, expected: String) {
     });
 }
 
-fn compile(source_code: &str) -> Result<String, CompileError> {
+fn compile(source_code: &str) -> CompileResult<String> {
     let mut context = Context::new();
     let main_document_id = syntax_analyze(&mut context, source_code)?;
     let mut ids = context.document_map.keys().copied().collect::<Vec<_>>();
     ids.sort_unstable();
     let ids = Rc::<[u32]>::from(ids);
     type_infer(&mut context, &ids)?;
-    mutability_check(&context, &ids)?;
+    lvalue_check(&context, &ids)?;
     main_function_check(&context, main_document_id)?;
     ir_translate(&mut context, &ids)?;
     let ir_code = ir_generate(&context, &ids, main_document_id)?;
@@ -75,7 +75,7 @@ fn compile(source_code: &str) -> Result<String, CompileError> {
     Ok(path)
 }
 
-fn execute<F: FnOnce() -> Result<(), CompileError>>(f: F) {
+fn execute<F: FnOnce() -> CompileResult<()>>(f: F) {
     if let Err(e) = f() {
         e.report()
     }

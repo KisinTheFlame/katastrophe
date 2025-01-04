@@ -1,3 +1,4 @@
+use crate::CompileResult;
 use crate::compiler::err::CompileError;
 use crate::sys_error;
 
@@ -38,13 +39,13 @@ impl Lexer {
         }
     }
 
-    fn pump_token(&mut self) -> Result<(), CompileError> {
+    fn pump_token(&mut self) -> CompileResult<()> {
         self.reader.skip_spaces();
         self.next_token = self.digest_token()?;
         Ok(())
     }
 
-    fn digest_token(&mut self) -> Result<Option<Token>, CompileError> {
+    fn digest_token(&mut self) -> CompileResult<Option<Token>> {
         self.reader.skip_spaces();
         if let Some(c) = self.reader.peek() {
             let token = match c {
@@ -63,7 +64,7 @@ impl Lexer {
         }
     }
 
-    fn digest_character(&mut self) -> Result<Token, CompileError> {
+    fn digest_character(&mut self) -> CompileResult<Token> {
         self.assert('\'');
         let c = match self.reader.peek_unwrap()? {
             '\\' => {
@@ -91,7 +92,7 @@ impl Lexer {
         }
     }
 
-    fn digest_number(&mut self) -> Result<Token, CompileError> {
+    fn digest_number(&mut self) -> CompileResult<Token> {
         let mut number = String::new();
         while let Some(c) = self.reader.peek() {
             if !(c.is_numeric() || c == '.') {
@@ -113,7 +114,7 @@ impl Lexer {
         }
     }
 
-    fn digest_identifier_or_keyword_or_bool(&mut self) -> Result<Token, CompileError> {
+    fn digest_identifier_or_keyword_or_bool(&mut self) -> CompileResult<Token> {
         let mut identifier = String::new();
         while let Some(c) = self.reader.peek() {
             if c.is_ascii_whitespace() {
@@ -169,7 +170,7 @@ impl Lexer {
         }
     }
 
-    fn digest(&mut self, expected: char) -> Result<(), CompileError> {
+    fn digest(&mut self, expected: char) -> CompileResult<()> {
         if let Some(c) = self.reader.peek() {
             if c == expected {
                 self.reader.forward();
@@ -182,7 +183,7 @@ impl Lexer {
         }
     }
 
-    fn digest_symbol(&mut self) -> Result<Token, CompileError> {
+    fn digest_symbol(&mut self) -> CompileResult<Token> {
         let c = self.reader.peek().unwrap();
         self.reader.forward();
         let symbol = match c {

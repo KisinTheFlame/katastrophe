@@ -1,3 +1,4 @@
+use crate::CompileResult;
 use crate::compiler::err::CompileError;
 
 pub struct Reader {
@@ -21,7 +22,7 @@ impl Reader {
     }
 
     /// # Errors
-    pub fn peek_unwrap(&self) -> Result<char, CompileError> {
+    pub fn peek_unwrap(&self) -> CompileResult<char> {
         self.peek().ok_or(CompileError::UnexpectedLexEOF)
     }
 

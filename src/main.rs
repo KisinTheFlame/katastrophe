@@ -5,13 +5,13 @@ use std::iter::Peekable;
 use std::rc::Rc;
 
 use indoc::formatdoc;
+use katastrophe::CompileResult;
 use katastrophe::assemble;
 use katastrophe::compiler::context::Context;
-use katastrophe::compiler::err::CompileError;
 use katastrophe::compiler::semantics::main_function_checker::main_function_check;
 use katastrophe::ir_generate;
 use katastrophe::ir_translate;
-use katastrophe::mutability_check;
+use katastrophe::lvalue_check;
 use katastrophe::syntax_analyze;
 use katastrophe::type_infer;
 
@@ -143,7 +143,7 @@ fn main() {
     }
 }
 
-fn execute() -> Result<(), CompileError> {
+fn execute() -> CompileResult<()> {
     let args = env::args();
     let mut arg_handler = ArgHandler::new(args);
     let options = arg_handler.handle();
@@ -165,7 +165,7 @@ fn execute() -> Result<(), CompileError> {
 
     type_infer(&mut context, &ids)?;
 
-    mutability_check(&context, &ids)?;
+    lvalue_check(&context, &ids)?;
 
     main_function_check(&context, main_document_id)?;
 

@@ -3,6 +3,8 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
+use crate::CompileResult;
+
 use super::err::CompileError;
 use super::syntax::ast::crumb::Identifier;
 
@@ -66,7 +68,7 @@ impl<T: Clone> Scope<T> {
         self.current_layer = Some(new_layer);
     }
 
-    pub fn leave(&mut self, tag: Tag) -> Result<(), CompileError> {
+    pub fn leave(&mut self, tag: Tag) -> CompileResult<()> {
         if self.current_layer.is_none() {
             return Err(CompileError::NullScope);
         }
@@ -81,43 +83,40 @@ impl<T: Clone> Scope<T> {
         Ok(())
     }
 
-    pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
+    pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> CompileResult<()> {
         self.execute_mut(|layer| layer.declare(symbol, symbol_info))
     }
 
-    pub fn overwrite(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
+    pub fn overwrite(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> CompileResult<()> {
         self.execute_mut(|layer| {
             layer.overwrite(symbol, symbol_info);
             Ok(())
         })
     }
 
-    pub fn lookup(&self, symbol: &String) -> Result<Option<T>, CompileError> {
+    pub fn lookup(&self, symbol: &String) -> CompileResult<Option<T>> {
         self.execute(|layer| Ok(layer.lookup(symbol)))
     }
 
-    fn execute<S>(&self, f: impl FnOnce(&Box<Layer<T>>) -> Result<S, CompileError>) -> Result<S, CompileError> {
+    fn execute<S>(&self, f: impl FnOnce(&Box<Layer<T>>) -> CompileResult<S>) -> CompileResult<S> {
         self.current_layer.as_ref().map_or(Err(CompileError::NullScope), f)
     }
 
-    fn execute_mut<S>(
-        &mut self,
-        f: impl FnOnce(&mut Box<Layer<T>>) -> Result<S, CompileError>,
-    ) -> Result<S, CompileError> {
+    fn execute_mut<S>(&mut self, f: impl FnOnce(&mut Box<Layer<T>>) -> CompileResult<S>) -> CompileResult<S> {
         self.current_layer.as_mut().map_or(Err(CompileError::NullScope), f)
     }
 
-    pub fn exist(&self, symbol: &String) -> Result<bool, CompileError> {
+    pub fn exist(&self, symbol: &String) -> CompileResult<bool> {
         Ok(self.lookup(symbol)?.is_some())
     }
 
-    pub fn is_global(&self) -> Result<bool, CompileError> {
+    pub fn is_global(&self) -> CompileResult<bool> {
         self.current_layer
             .as_ref()
             .map_or(Err(CompileError::NullScope), |layer| Ok(layer.tag == Tag::Global))
     }
 
-    pub fn current_function(&self) -> Result<Rc<Identifier>, CompileError> {
+    pub fn current_function(&self) -> CompileResult<Rc<Identifier>> {
         self.current_layer
             .as_ref()
             .map_or(Err(CompileError::NullScope), |layer| layer.get_current_function_name())
@@ -157,7 +156,7 @@ impl<T: Clone> Layer<T> {
         }
     }
 
-    pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> Result<(), CompileError> {
+    pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> CompileResult<()> {
         if self.symbol_table.contains_key(&symbol) {
             return Err(CompileError::DuplicateIdentifierInSameScope(symbol.clone()));
         }
@@ -180,7 +179,7 @@ impl<T: Clone> Layer<T> {
         }
     }
 
-    pub fn get_current_function_name(&self) -> Result<Rc<Identifier>, CompileError> {
+    pub fn get_current_function_name(&self) -> CompileResult<Rc<Identifier>> {
         if let Tag::Function(name) = &self.tag {
             return Ok(name.clone());
         }
