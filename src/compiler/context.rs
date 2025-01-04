@@ -7,9 +7,8 @@ use super::ir::instruction::Instruction;
 use super::ir::instruction::IrModel;
 use super::syntax::ast::Document;
 use super::syntax::ast::crumb::Identifier;
-use super::syntax::ast::crumb::Mutability;
 use super::syntax::ast::package::DocumentPath;
-use super::syntax::ast::ty::Type;
+use super::syntax::ast::reference::Reference;
 
 pub type DocumentId = u32;
 
@@ -17,8 +16,7 @@ pub struct Context {
     pub id_map: HashMap<Rc<DocumentPath>, DocumentId>,
     pub path_map: HashMap<DocumentId, Rc<DocumentPath>>,
     pub document_map: HashMap<DocumentId, Document>,
-    pub type_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Rc<Type>>>,
-    pub mutability_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Mutability>>,
+    pub reference_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Rc<Reference>>>,
     pub ir_model_map: HashMap<DocumentId, HashMap<Rc<Identifier>, IrModel>>,
     pub instruction: HashMap<DocumentId, Rc<Instruction>>,
 }
@@ -30,8 +28,7 @@ impl Context {
             id_map: HashMap::new(),
             path_map: HashMap::new(),
             document_map: HashMap::new(),
-            type_map: HashMap::new(),
-            mutability_map: HashMap::new(),
+            reference_map: HashMap::new(),
             ir_model_map: HashMap::new(),
             instruction: HashMap::new(),
         }

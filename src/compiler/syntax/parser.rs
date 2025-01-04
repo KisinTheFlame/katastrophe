@@ -27,6 +27,7 @@ use super::ast::operator::Operator;
 use super::ast::operator::Unary;
 use super::ast::package::DocumentPath;
 use super::ast::package::UsingPath;
+use super::ast::reference::Reference;
 use super::ast::statement::DefineDetail;
 use super::ast::statement::IfDetail;
 use super::ast::statement::LetDetail;
@@ -37,8 +38,7 @@ use super::ast::ty::Type;
 pub struct Parser {
     lexer: Lexer,
     document_path: Rc<DocumentPath>,
-    type_map: HashMap<Rc<Identifier>, Rc<Type>>,
-    mutability_map: HashMap<Rc<Identifier>, Mutability>,
+    reference_map: HashMap<Rc<Identifier>, Rc<Reference>>,
     scope: Scope<()>,
 }
 
@@ -50,8 +50,7 @@ impl Parser {
         Parser {
             lexer: Lexer::new(code),
             document_path,
-            type_map: HashMap::new(),
-            mutability_map: HashMap::new(),
+            reference_map: HashMap::new(),
             scope: Scope::new(),
         }
     }
@@ -455,8 +454,8 @@ impl Parser {
         let identifier = &prototype.identifier;
         if self.scope.is_global()? {
             let function_type = prototype.function_type.clone();
-            self.type_map.insert(identifier.clone(), function_type);
-            self.mutability_map.insert(identifier.clone(), Mutability::Immutable);
+            let function_reference = Reference::Binding(function_type, Mutability::Immutable).into();
+            self.reference_map.insert(identifier.clone(), function_reference);
         }
         self.scope.enter(Tag::Function(identifier.clone()));
         let body = self.parse_block_statement(context)?.into();
@@ -486,8 +485,8 @@ impl Parser {
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;
         if self.scope.is_global()? {
-            self.type_map.insert(lvalue.clone(), lvalue_type.clone());
-            self.mutability_map.insert(lvalue.clone(), mutability);
+            let reference = Reference::Binding(lvalue_type.clone(), mutability).into();
+            self.reference_map.insert(lvalue.clone(), reference);
         }
         Ok(LetDetail(Variable(lvalue, lvalue_type, mutability), expression.into()))
     }
@@ -555,8 +554,7 @@ impl Parser {
             statements: statements.into(),
         };
         context.document_map.insert(id, document);
-        context.type_map.insert(id, mem::take(&mut self.type_map));
-        context.mutability_map.insert(id, mem::take(&mut self.mutability_map));
+        context.reference_map.insert(id, mem::take(&mut self.reference_map));
         Ok(id)
     }
 }
