@@ -11,6 +11,7 @@ pub mod crumb;
 pub mod expression;
 pub mod operator;
 pub mod package;
+pub mod reference;
 pub mod statement;
 pub mod ty;
 

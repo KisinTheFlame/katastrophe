@@ -12,6 +12,7 @@ use crate::compiler::syntax::ast::crumb::Variable;
 use crate::compiler::syntax::ast::expression::Expression;
 use crate::compiler::syntax::ast::operator::Binary;
 use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::reference::Reference;
 use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
 use crate::compiler::syntax::ast::statement::Statement;
@@ -107,9 +108,10 @@ impl MutabilityChecker {
             },
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let id = context.id_map.get(document_path).unwrap();
-                let Some(mutability) = context.mutability_map.get(id).unwrap().get(symbol) else {
+                let Some(reference) = context.reference_map.get(id).unwrap().get(symbol) else {
                     sys_error!("used symbol must exist");
                 };
+                let Reference::Binding(_, mutability) = reference.as_ref();
                 self.scope.declare(symbol.clone(), *mutability)?;
                 Ok(())
             }

@@ -15,6 +15,7 @@ use crate::compiler::syntax::ast::expression::Expression;
 use crate::compiler::syntax::ast::operator::Binary;
 use crate::compiler::syntax::ast::operator::Unary;
 use crate::compiler::syntax::ast::package::UsingPath;
+use crate::compiler::syntax::ast::reference::Reference;
 use crate::compiler::syntax::ast::statement::DefineDetail;
 use crate::compiler::syntax::ast::statement::IfDetail;
 use crate::compiler::syntax::ast::statement::LetDetail;
@@ -357,8 +358,8 @@ impl TypeInferrer {
             }) => self.infer_define_statement(context, prototype, body)?,
             Statement::Using(UsingPath(document_path, symbol)) => {
                 let used_document_id = context.id_map.get(document_path).unwrap();
-                let type_map = context.type_map.get(used_document_id).unwrap();
-                let Some(symbol_type) = type_map.get(symbol) else {
+                let reference_map = context.reference_map.get(used_document_id).unwrap();
+                let Some(Reference::Binding(symbol_type, _)) = reference_map.get(symbol).map(Rc::as_ref) else {
                     sys_error!("used symbol must exist");
                 };
                 self.scope.declare(symbol.clone(), symbol_type.clone())?;

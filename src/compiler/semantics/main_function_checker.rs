@@ -1,16 +1,19 @@
+use std::rc::Rc;
+
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
+use crate::compiler::syntax::ast::reference::Reference;
 use crate::compiler::syntax::ast::ty::Type;
 use crate::sys_error;
 
 /// # Errors
 pub fn main_function_check(context: &Context, main_document_id: DocumentId) -> Result<(), CompileError> {
-    let Some(type_map) = context.type_map.get(&main_document_id) else {
-        sys_error!("type map must exist");
+    let Some(reference_map) = context.reference_map.get(&main_document_id) else {
+        sys_error!("reference map must exist");
     };
-    let Some(main_type) = type_map.get(&String::from("main")) else {
+    let Some(Reference::Binding(main_type, _)) = reference_map.get(&String::from("main")).map(Rc::as_ref) else {
         return Err(CompileError::UndeclaredMainFunction);
     };
     let expected_main_function_type = Type::Function {
