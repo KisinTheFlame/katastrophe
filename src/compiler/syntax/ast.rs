@@ -9,6 +9,7 @@ use self::statement::Statement;
 
 pub mod crumb;
 pub mod expression;
+pub mod lvalue;
 pub mod operator;
 pub mod package;
 pub mod reference;

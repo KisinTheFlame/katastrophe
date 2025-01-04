@@ -7,7 +7,7 @@ use compiler::err::CompileError;
 use compiler::ir::builtin::generate_entry;
 use compiler::ir::builtin::generate_libc_function;
 use compiler::ir::translator::Translator;
-use compiler::semantics::mutability_checker::MutabilityChecker;
+use compiler::semantics::lvalue_checker::MutabilityChecker;
 use compiler::semantics::type_inferrer::TypeInferrer;
 use compiler::syntax::ast::package::DocumentPath;
 use indoc::formatdoc;
