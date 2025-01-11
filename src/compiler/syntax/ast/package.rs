@@ -8,6 +8,7 @@ use crate::compiler::context::Context;
 use crate::compiler::err::CompileError;
 use crate::compiler::ir::instruction::value::Value;
 use crate::compiler::syntax::parser::Parser;
+use crate::constants::common::STD_ROOT;
 use crate::util::common::Array;
 
 use super::crumb::Identifier;
@@ -70,7 +71,6 @@ fn get_package_path(document_path: &Rc<DocumentPath>) -> String {
 }
 
 fn get_std_package_path(document_path: &Rc<DocumentPath>) -> String {
-    const STD_ROOT: &str = "./library";
     let dir = document_path.to_dir();
     format!("{STD_ROOT}/{dir}")
 }
