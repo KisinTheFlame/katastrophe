@@ -1,6 +1,3 @@
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-
 use crate::compiler::syntax::ast::crumb::Identifier;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,32 +15,23 @@ pub enum Keyword {
     Struct,
 }
 
-static KEYWORD_MAP: Lazy<HashMap<&'static str, Keyword>> = Lazy::new(|| {
-    HashMap::from(
-        [
-            ("def", Keyword::Define),
-            ("using", Keyword::Using),
-            ("return", Keyword::Return),
-            ("let", Keyword::Let),
-            ("if", Keyword::If),
-            ("else", Keyword::Else),
-            ("while", Keyword::While),
-            ("as", Keyword::As),
-            ("mut", Keyword::Mut),
-            ("builtin", Keyword::Builtin),
-            ("struct", Keyword::Struct),
-        ]
-        .map(|(s, k)| (s, k)),
-    )
-});
-
 impl Keyword {
-    pub fn validate(s: &str) -> bool {
-        KEYWORD_MAP.contains_key(s)
-    }
-
-    pub fn from(s: &str) -> Option<Keyword> {
-        KEYWORD_MAP.get(s).copied()
+    #[must_use]
+    pub fn of(s: &str) -> Option<Keyword> {
+        match s {
+            "def" => Some(Keyword::Define),
+            "using" => Some(Keyword::Using),
+            "return" => Some(Keyword::Return),
+            "let" => Some(Keyword::Let),
+            "if" => Some(Keyword::If),
+            "else" => Some(Keyword::Else),
+            "while" => Some(Keyword::While),
+            "as" => Some(Keyword::As),
+            "mut" => Some(Keyword::Mut),
+            "builtin" => Some(Keyword::Builtin),
+            "struct" => Some(Keyword::Struct),
+            _ => None,
+        }
     }
 }
 

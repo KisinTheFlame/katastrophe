@@ -137,8 +137,8 @@ impl Lexer {
             "true" => Token::BoolLiteral(true),
             "false" => Token::BoolLiteral(false),
             str => {
-                if Keyword::validate(str) {
-                    Token::Keyword(Keyword::from(str).unwrap())
+                if let Some(keyword) = Keyword::of(str) {
+                    Token::Keyword(keyword)
                 } else {
                     Token::Identifier(identifier)
                 }
