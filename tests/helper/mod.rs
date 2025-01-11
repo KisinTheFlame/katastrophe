@@ -13,7 +13,7 @@ use katastrophe::syntax_analyze;
 use katastrophe::type_infer;
 use katastrophe::util::file::gen_tmp_exe_path;
 
-const PATH_TO_TEST_FILES: &str = "static/test_files";
+const PATH_TO_TEST_FILES: &str = "test_files";
 
 pub fn test_with(test_name: &str) {
     let path_to_test = format!("{PATH_TO_TEST_FILES}/{test_name}");
