@@ -1,7 +1,10 @@
 use std::env::Args;
 use std::env::{self};
+use std::fmt;
+use std::fmt::Display;
 use std::fs;
 use std::iter::Peekable;
+use std::process;
 use std::rc::Rc;
 
 use indoc::formatdoc;
@@ -27,16 +30,23 @@ enum CommandError {
 
 impl CommandError {
     fn report(&self) -> ! {
+        eprintln!("error: {self}");
+        process::exit(1);
+    }
+}
+
+impl Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CommandError::MissingOutputFile => {
-                panic!("unexpected EOF after -o or --output. need a output path.")
+                write!(f, "unexpected EOF after -o or --output. need a output path.")
             }
-            CommandError::DuplicateInputDeclaration => panic!("duplicate input path declarations."),
+            CommandError::DuplicateInputDeclaration => write!(f, "duplicate input path declarations."),
             CommandError::DuplicateOutputFileDeclaration => {
-                panic!("duplicate output path declarations.")
+                write!(f, "duplicate output path declarations.")
             }
-            CommandError::DuplicateTargetDeclaration => panic!("duplicate target declarations."),
-            CommandError::NoInputFile => panic!("no input file."),
+            CommandError::DuplicateTargetDeclaration => write!(f, "duplicate target declarations."),
+            CommandError::NoInputFile => write!(f, "no input file."),
         }
     }
 }
@@ -139,7 +149,8 @@ impl ArgHandler {
 
 fn main() {
     if let Err(e) = execute() {
-        e.report();
+        eprintln!("error: {e}");
+        process::exit(1);
     }
 }
 

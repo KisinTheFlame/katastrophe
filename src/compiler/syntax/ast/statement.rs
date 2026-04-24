@@ -131,7 +131,7 @@ impl PrettyFormat for Statement {
                     .try_for_each(|field| field.pretty_format(f, indentation_num + 1))?;
                 writeln!(f, "{indent}End")?;
             }
-        };
+        }
         Ok(())
     }
 }

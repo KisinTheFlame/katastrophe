@@ -84,7 +84,7 @@ impl Display for Type {
             Type::Struct { id, name, .. } => {
                 write!(f, "struct {name}({id})")?;
             }
-        };
+        }
         Ok(())
     }
 }

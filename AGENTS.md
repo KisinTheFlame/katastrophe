@@ -14,7 +14,7 @@ Katastrophe is a toy statically-typed language with a compiler written in Rust. 
 - Run the full test suite: `cargo test`
 - Run a single integration test: `cargo test --test integration_test test_fibonacci` (other cases: `test_minimal`, `test_hello_world`, `test_i8`, `test_struct`)
 - Lint (matches CI): `cargo clippy -- -Dclippy::pedantic -Dwarnings`
-- Format check (matches CI): `cargo +nightly fmt -- --check` — `rustfmt.toml` enables unstable features (`style_edition = "2024"`, `imports_granularity = "Item"`), so **formatting requires a nightly toolchain**; stable `rustfmt` will reject the config.
+- Format check (matches CI): `cargo fmt --check` — formatting uses stable rustfmt.
 
 Integration tests (`tests/integration_test.rs` → `tests/helper/mod.rs`) compile the `.katas` file under `static/test_files/<name>/`, execute the resulting binary, and diff stdout against the sibling `output` file. To add a case, create a new directory there with a `main.katas` and `output` file, then add a `test_<name>` function.
 

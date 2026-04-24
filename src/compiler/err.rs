@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::Display;
 use std::rc::Rc;
 
 use crate::util::common::Array;
@@ -97,71 +99,80 @@ pub enum CompileError {
 
 impl CompileError {
     /// # Panics
-    #[allow(clippy::too_many_lines)]
     pub fn report(self) -> ! {
+        panic!("{self}")
+    }
+}
+
+impl Display for CompileError {
+    #[allow(clippy::too_many_lines)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             // Lex Errors
             CompileError::IllegalIntegerLiteral(ref s) | CompileError::IllegalFloatLiteral(ref s) => {
-                panic!("encountering illegal literal: {s}")
+                write!(f, "encountering illegal literal: {s}")
             }
             CompileError::IllegalEscapeChar(c) => {
-                panic!("illegal escape char: {c}")
+                write!(f, "illegal escape char: {c}")
             }
             CompileError::UnexpectedCharacter(c) => {
-                panic!("encountering unexpected character: {c}")
+                write!(f, "encountering unexpected character: {c}")
             }
-            CompileError::UnexpectedLexEOF => panic!("code should not end here"),
+            CompileError::UnexpectedLexEOF => write!(f, "code should not end here"),
 
             // Parse Errors
             CompileError::MissingIdentifier => {
-                panic!("failed to expect an identifier")
+                write!(f, "failed to expect an identifier")
             }
             CompileError::MissingKeyword(keyword) => {
-                panic!("missing expected keyword: {keyword:?}")
+                write!(f, "missing expected keyword: {keyword:?}")
             }
             CompileError::MissingSymbol(symbol) => {
-                panic!("missing expected symbol: {symbol:?}")
+                write!(f, "missing expected symbol: {symbol:?}")
             }
             CompileError::UnexpectedParseEOF => {
-                panic!("encountering unexpected EOF")
+                write!(f, "encountering unexpected EOF")
             }
             CompileError::UnexpectedToken(token) => {
-                panic!("encountering unexpected token: {token:?}")
+                write!(f, "encountering unexpected token: {token:?}")
             }
             CompileError::UnknownType(unknown_type) => {
-                panic!("encountering unknown type: {unknown_type}")
+                write!(f, "encountering unknown type: {unknown_type}")
             }
             CompileError::UnknownPackage => {
-                panic!("unknown package.")
+                write!(f, "unknown package.")
             }
 
             // Semantics Errors
             CompileError::UndeclaredIdentifier(identifier) => {
-                panic!("undeclared identifier: {identifier}.")
+                write!(f, "undeclared identifier: {identifier}.")
             }
             CompileError::IllegalLValue => {
-                panic!("illegal lvalue.")
+                write!(f, "illegal lvalue.")
             }
             CompileError::AssigningImmutableVariable(identifier) => {
-                panic!("assigning immutable variable: {identifier}.")
+                write!(f, "assigning immutable variable: {identifier}.")
             }
 
             // Type Errors
             CompileError::ShouldBeFunctionType => {
-                panic!("should be a function type.")
+                write!(f, "should be a function type.")
             }
             CompileError::ShouldBeStructType => {
-                panic!("should be a struct type.")
+                write!(f, "should be a struct type.")
             }
             CompileError::FieldNotExist(field_name) => {
-                panic!("field '{field_name}' does not exists.")
+                write!(f, "field '{field_name}' does not exists.")
             }
             CompileError::FieldTypeNotMatch {
                 field_name,
                 expected_type,
                 actual_type,
             } => {
-                panic!("field {field_name} type mismatch. expected type: {expected_type}, actual type: {actual_type}")
+                write!(
+                    f,
+                    "field {field_name} type mismatch. expected type: {expected_type}, actual type: {actual_type}"
+                )
             }
             CompileError::FieldMissing(missing_fields) => {
                 let missing_fields = missing_fields
@@ -170,28 +181,31 @@ impl CompileError {
                     .cloned()
                     .collect::<Rc<_>>()
                     .join(", ");
-                panic!("missing field(s): {missing_fields}")
+                write!(f, "missing field(s): {missing_fields}")
             }
             CompileError::UndefinedUnaryExpression(operator, ty) => {
-                panic!("undefined unary expression: {operator} {ty}")
+                write!(f, "undefined unary expression: {operator} {ty}")
             }
             CompileError::UndefinedBinaryExpression(operator, t1, t2) => {
-                panic!("undefined binary expression: {t1} {operator} {t2}")
+                write!(f, "undefined binary expression: {t1} {operator} {t2}")
             }
             CompileError::ProcessInGlobal => {
-                panic!("process statements found in global.")
+                write!(f, "process statements found in global.")
             }
             CompileError::ReturnTypeMismatch { expected, returned } => {
-                panic!("return type mismatch. expected: {expected}, returned: {returned}.")
+                write!(f, "return type mismatch. expected: {expected}, returned: {returned}.")
             }
             CompileError::ConditionNeedBool => {
-                panic!("condition is supposed to be bool type.")
+                write!(f, "condition is supposed to be bool type.")
             }
             CompileError::AssignTypeMismatch {
                 lvalue_type: declared_type,
                 expression_type,
             } => {
-                panic!("assignment type mismatch. declared: {declared_type}, expression type: {expression_type}.")
+                write!(
+                    f,
+                    "assignment type mismatch. declared: {declared_type}, expression type: {expression_type}."
+                )
             }
             CompileError::CallArgumentTypesMismatch {
                 function_id,
@@ -210,43 +224,44 @@ impl CompileError {
                     .map(Type::to_string)
                     .collect::<Rc<_>>()
                     .join(", ");
-                panic!(
+                write!(
+                    f,
                     "arguments of call statement mismatch with parameters.
                 function: {function_id},
                 parameter types: {parameter_types},
                 argument types: {argument_types}"
-                );
+                )
             }
             CompileError::IllegalCast { from_type, to_type } => {
-                panic!("illegal cast from {from_type} to {to_type}")
+                write!(f, "illegal cast from {from_type} to {to_type}")
             }
             CompileError::UndeclaredMainFunction => {
-                panic!("main function not declared in input document.")
+                write!(f, "main function not declared in input document.")
             }
             CompileError::IllegalMainFunctionType => {
-                panic!("the type of main function must be () -> i32.")
+                write!(f, "the type of main function must be () -> i32.")
             }
 
             // Ir Errors
             CompileError::BuiltinFileNotExist => {
-                panic!("builtin file not exist.");
+                write!(f, "builtin file not exist.")
             }
             CompileError::BuiltinFunctionFileNotExist(identifier) => {
-                panic!("builtin function {identifier} file not exist")
+                write!(f, "builtin function {identifier} file not exist")
             }
 
             // Scope Errors
             CompileError::NullScope => {
-                panic!("null scope.");
+                write!(f, "null scope.")
             }
             CompileError::ScopeMismatch { expected, encountered } => {
-                panic!("scope mismatch. expected {expected}, encountered {encountered}.");
+                write!(f, "scope mismatch. expected {expected}, encountered {encountered}.")
             }
             CompileError::DuplicateIdentifierInSameScope(identifier) => {
-                panic!("encountered duplicate identifier {identifier} in same scope.")
+                write!(f, "encountered duplicate identifier {identifier} in same scope.")
             }
             CompileError::NotInFunction => {
-                panic!("outside any function.")
+                write!(f, "outside any function.")
             }
         }
     }
