@@ -2,6 +2,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::compiler::context::StructId;
+use crate::sys_error;
 use crate::util::common::Array;
 use crate::util::pretty_format::PrettyFormat;
 use crate::util::pretty_format::indent;
@@ -108,7 +109,7 @@ impl PrettyFormat for Statement {
                     parameter_types,
                 } = function_type.as_ref()
                 else {
-                    panic!("must be a function type");
+                    sys_error!("function prototype must have function type");
                 };
                 let parameters = parameters
                     .iter()

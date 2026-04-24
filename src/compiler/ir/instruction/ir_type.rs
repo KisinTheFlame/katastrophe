@@ -79,7 +79,7 @@ impl Display for IrType {
             IrType::Function {
                 return_type: _,
                 parameter_types: _,
-            } => panic!("should never print function type"),
+            } => sys_error!("function type should never be formatted as a value type"),
             IrType::Struct { id, name, .. } => write!(f, "%s{id}.{name}"),
         }
     }

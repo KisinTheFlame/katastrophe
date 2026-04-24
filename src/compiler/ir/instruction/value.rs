@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
+use crate::sys_error;
 use crate::util::common::Array;
 
 use super::IrId;
@@ -26,7 +27,7 @@ impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Void => {
-                panic!("void")
+                sys_error!("void value should never be formatted")
             }
             Value::Register(id) | Value::Parameter(id) => {
                 write!(f, "%{id}")

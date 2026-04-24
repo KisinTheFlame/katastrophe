@@ -378,7 +378,7 @@ impl Translator {
                         };
                         Ok((instruction.into(), result))
                     }
-                    _ => panic!(),
+                    _ => sys_error!("identifier cannot refer to this IR value kind"),
                 }
             }
             Expression::IntLiteral(literal) => {
