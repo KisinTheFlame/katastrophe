@@ -26,7 +26,7 @@ pub type CompileResult<T> = Result<T, CompileError>;
 /// # Errors
 pub fn syntax_analyze(context: &mut Context, code: &str) -> CompileResult<u32> {
     let document_path = DocumentPath([Rc::new(String::from("self"))].into()).into();
-    let mut parser = Parser::new(document_path, code);
+    let mut parser = Parser::new(document_path, code)?;
     let main_document_id = parser.parse_document(context)?;
     Ok(main_document_id)
 }

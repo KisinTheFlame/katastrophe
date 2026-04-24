@@ -51,14 +51,14 @@ pub struct Parser {
 type TypedParameters = (Array<Parameter>, Array<Type>);
 
 impl Parser {
-    #[must_use]
-    pub fn new(document_path: Rc<DocumentPath>, code: &str) -> Parser {
-        Parser {
-            lexer: Lexer::new(code),
+    /// # Errors
+    pub fn new(document_path: Rc<DocumentPath>, code: &str) -> CompileResult<Parser> {
+        Ok(Parser {
+            lexer: Lexer::new(code)?,
             document_path,
             reference_map: HashMap::new(),
             scope: Scope::new(),
-        }
+        })
     }
 
     fn match_keyword(&mut self, expected_keyword: Keyword) -> bool {
@@ -70,16 +70,16 @@ impl Parser {
         false
     }
 
-    fn expect_keyword(&mut self, expected_keyword: Keyword) -> bool {
+    fn expect_keyword(&mut self, expected_keyword: Keyword) -> CompileResult<bool> {
         let matched = self.match_keyword(expected_keyword);
         if matched {
-            self.lexer.next();
+            self.lexer.advance()?;
         }
-        matched
+        Ok(matched)
     }
 
     fn digest_keyword(&mut self, expected_keyword: Keyword) -> CompileResult<()> {
-        if self.expect_keyword(expected_keyword) {
+        if self.expect_keyword(expected_keyword)? {
             Ok(())
         } else {
             Err(CompileError::MissingKeyword(expected_keyword))
@@ -95,16 +95,16 @@ impl Parser {
         false
     }
 
-    fn expect_symbol(&mut self, expected_symbol: Symbol) -> bool {
+    fn expect_symbol(&mut self, expected_symbol: Symbol) -> CompileResult<bool> {
         let matched = self.match_symbol(expected_symbol);
         if matched {
-            self.lexer.next();
+            self.lexer.advance()?;
         }
-        matched
+        Ok(matched)
     }
 
     fn digest_symbol(&mut self, expected_symbol: Symbol) -> CompileResult<()> {
-        if self.expect_symbol(expected_symbol) {
+        if self.expect_symbol(expected_symbol)? {
             Ok(())
         } else {
             Err(CompileError::MissingSymbol(expected_symbol))
@@ -113,14 +113,14 @@ impl Parser {
 
     fn parse_function_call_args(&mut self) -> CompileResult<Array<Expression>> {
         self.digest_symbol(Symbol::LeftParentheses)?;
-        if self.expect_symbol(Symbol::RightParentheses) {
+        if self.expect_symbol(Symbol::RightParentheses)? {
             return Ok([].into());
         }
         let mut args = Vec::new();
         loop {
             let arg = self.parse_expression()?;
             args.push(arg.into());
-            if !self.expect_symbol(Symbol::Comma) {
+            if !self.expect_symbol(Symbol::Comma)? {
                 break;
             }
         }
@@ -131,7 +131,7 @@ impl Parser {
     fn parse_identifier(&mut self) -> CompileResult<String> {
         if let Some(Token::Identifier(identifier)) = self.lexer.peek() {
             let identifier = identifier.clone();
-            self.lexer.next();
+            self.lexer.advance()?;
             Ok(identifier)
         } else {
             Err(CompileError::MissingIdentifier)
@@ -145,7 +145,7 @@ impl Parser {
         }
         if self.match_symbol(Symbol::Dot) {
             let mut expression = Expression::Identifier(identifier.into());
-            while self.expect_symbol(Symbol::Dot) {
+            while self.expect_symbol(Symbol::Dot)? {
                 let field = self.parse_identifier()?.into();
                 expression = Expression::Access(expression.into(), Type::Unknown.into(), field);
             }
@@ -154,24 +154,24 @@ impl Parser {
         Ok(Expression::Identifier(identifier.into()))
     }
 
-    fn parse_integer_literal(&mut self, literal: i32) -> Expression {
-        self.lexer.next();
-        Expression::IntLiteral(literal)
+    fn parse_integer_literal(&mut self, literal: i32) -> CompileResult<Expression> {
+        self.lexer.advance()?;
+        Ok(Expression::IntLiteral(literal))
     }
 
-    fn parse_char_literal(&mut self, literal: char) -> Expression {
-        self.lexer.next();
-        Expression::CharLiteral(literal)
+    fn parse_char_literal(&mut self, literal: char) -> CompileResult<Expression> {
+        self.lexer.advance()?;
+        Ok(Expression::CharLiteral(literal))
     }
 
-    fn parse_float_literal(&mut self, literal: f64) -> Expression {
-        self.lexer.next();
-        Expression::FloatLiteral(literal)
+    fn parse_float_literal(&mut self, literal: f64) -> CompileResult<Expression> {
+        self.lexer.advance()?;
+        Ok(Expression::FloatLiteral(literal))
     }
 
-    fn parse_bool_literal(&mut self, literal: bool) -> Expression {
-        self.lexer.next();
-        Expression::BoolLiteral(literal)
+    fn parse_bool_literal(&mut self, literal: bool) -> CompileResult<Expression> {
+        self.lexer.advance()?;
+        Ok(Expression::BoolLiteral(literal))
     }
 
     fn parse_unary_expression(&mut self) -> CompileResult<Expression> {
@@ -184,7 +184,7 @@ impl Parser {
                     return Err(CompileError::MissingSymbol(*symbol));
                 }
             };
-            self.lexer.next();
+            self.lexer.advance()?;
             Ok(Expression::Unary(
                 operator,
                 Type::Unknown.into(),
@@ -201,15 +201,15 @@ impl Parser {
     }
 
     fn parse_spawn_expression(&mut self, spawned: Rc<Identifier>) -> CompileResult<Expression> {
-        self.lexer.next();
+        self.lexer.advance()?;
         self.digest_symbol(Symbol::LeftBrace)?;
         let mut fields = Vec::new();
-        while !self.expect_symbol(Symbol::RightBrace) {
+        while !self.expect_symbol(Symbol::RightBrace)? {
             let field_name = self.parse_identifier()?.into();
             self.digest_symbol(Symbol::Colon)?;
             let field_value = self.parse_expression()?.into();
             fields.push(FieldInit(field_name, field_value).into());
-            if !self.expect_symbol(Symbol::Comma) {
+            if !self.expect_symbol(Symbol::Comma)? {
                 break;
             }
         }
@@ -224,19 +224,19 @@ impl Parser {
             Token::Identifier(_) => Ok(self.parse_identifier_or_call_or_access()?),
             Token::IntLiteral(literal) => {
                 let literal = *literal;
-                Ok(self.parse_integer_literal(literal))
+                self.parse_integer_literal(literal)
             }
             Token::CharLiteral(literal) => {
                 let literal = *literal;
-                Ok(self.parse_char_literal(literal))
+                self.parse_char_literal(literal)
             }
             Token::FloatLiteral(literal) => {
                 let literal = *literal;
-                Ok(self.parse_float_literal(literal))
+                self.parse_float_literal(literal)
             }
             Token::BoolLiteral(literal) => {
                 let literal = *literal;
-                Ok(self.parse_bool_literal(literal))
+                self.parse_bool_literal(literal)
             }
             Token::Symbol(Symbol::LeftParentheses) => Ok(self.parse_parentheses_expression()?),
             Token::Spawning(spawned) => {
@@ -299,7 +299,7 @@ impl Parser {
                 return Ok(lhs);
             }
 
-            self.lexer.next();
+            self.lexer.advance()?;
 
             if current_operator == Binary::As {
                 let to_type = self.parse_type()?;
@@ -368,7 +368,7 @@ impl Parser {
     fn parse_block_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         let mut statements = Vec::new();
         self.digest_symbol(Symbol::LeftBrace)?;
-        while !self.expect_symbol(Symbol::RightBrace) {
+        while !self.expect_symbol(Symbol::RightBrace)? {
             let statement = self.parse_statement(context)?.into();
             statements.push(statement);
         }
@@ -379,7 +379,7 @@ impl Parser {
         self.digest_keyword(Keyword::If)?;
         let condition = self.parse_expression()?.into();
         let true_body = self.parse_block_statement(context)?.into();
-        let false_body = if self.expect_keyword(Keyword::Else) {
+        let false_body = if self.expect_keyword(Keyword::Else)? {
             if self.match_keyword(Keyword::If) {
                 Some(self.parse_if_statement(context)?.into())
             } else {
@@ -413,7 +413,7 @@ impl Parser {
 
     fn parse_function_parameters(&mut self) -> CompileResult<TypedParameters> {
         self.digest_symbol(Symbol::LeftParentheses)?;
-        if self.expect_symbol(Symbol::RightParentheses) {
+        if self.expect_symbol(Symbol::RightParentheses)? {
             return Ok(([].into(), [].into()));
         }
         let mut parameters = Vec::new();
@@ -422,7 +422,7 @@ impl Parser {
             let (parameter, parameter_type) = self.parse_function_parameter()?;
             parameters.push(Rc::new(parameter));
             parameter_types.push(parameter_type.into());
-            if !self.expect_symbol(Symbol::Comma) {
+            if !self.expect_symbol(Symbol::Comma)? {
                 break;
             }
         }
@@ -433,11 +433,11 @@ impl Parser {
     fn parse_function_type(&mut self) -> CompileResult<Type> {
         let mut parameter_types = Vec::new();
         loop {
-            if self.expect_symbol(Symbol::RightParentheses) {
+            if self.expect_symbol(Symbol::RightParentheses)? {
                 break;
             }
             parameter_types.push(self.parse_type()?.into());
-            if !self.expect_symbol(Symbol::Comma) {
+            if !self.expect_symbol(Symbol::Comma)? {
                 self.digest_symbol(Symbol::RightParentheses)?;
                 break;
             }
@@ -451,7 +451,7 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> CompileResult<Type> {
-        if self.expect_symbol(Symbol::LeftParentheses) {
+        if self.expect_symbol(Symbol::LeftParentheses)? {
             self.parse_function_type()
         } else {
             let type_str = self.parse_identifier()?;
@@ -466,7 +466,7 @@ impl Parser {
     }
 
     fn parse_function_return_type(&mut self) -> CompileResult<Type> {
-        if self.expect_symbol(Symbol::Arrow) {
+        if self.expect_symbol(Symbol::Arrow)? {
             self.parse_type()
         } else {
             Ok(Type::Never)
@@ -490,7 +490,7 @@ impl Parser {
 
     fn parse_define_statement(&mut self, context: &mut Context) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::Define)?;
-        let builtin = self.expect_keyword(Keyword::Builtin);
+        let builtin = self.expect_keyword(Keyword::Builtin)?;
         let prototype = self.parse_function_prototype()?;
         let identifier = &prototype.identifier;
         if self.scope.is_global() {
@@ -511,13 +511,13 @@ impl Parser {
 
     fn parse_let_statement(&mut self) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::Let)?;
-        let mutability = if self.expect_keyword(Keyword::Mut) {
+        let mutability = if self.expect_keyword(Keyword::Mut)? {
             Mutability::Mutable
         } else {
             Mutability::Immutable
         };
         let lvalue = Rc::new(self.parse_identifier()?);
-        let lvalue_type = if self.expect_keyword(Keyword::As) {
+        let lvalue_type = if self.expect_keyword(Keyword::As)? {
             self.parse_type()?
         } else {
             Type::Unknown
@@ -536,7 +536,7 @@ impl Parser {
 
     fn parse_return_statement(&mut self) -> CompileResult<Statement> {
         self.digest_keyword(Keyword::Return)?;
-        if self.expect_symbol(Symbol::Semicolon) {
+        if self.expect_symbol(Symbol::Semicolon)? {
             return Ok(Statement::Return(None));
         }
         let expression = self.parse_expression()?;
@@ -548,7 +548,7 @@ impl Parser {
         self.digest_keyword(Keyword::Using)?;
         let mut path_nodes = Vec::new();
         path_nodes.push(self.parse_identifier()?);
-        while self.expect_symbol(Symbol::DoubleColon) {
+        while self.expect_symbol(Symbol::DoubleColon)? {
             path_nodes.push(self.parse_identifier()?);
         }
         self.digest_symbol(Symbol::Semicolon)?;
@@ -572,7 +572,7 @@ impl Parser {
             self.digest_keyword(Keyword::As)?;
             let field_type = self.parse_type()?.into();
             fields.push(Field(field_name, field_type).into());
-            if !self.expect_symbol(Symbol::Comma) {
+            if !self.expect_symbol(Symbol::Comma)? {
                 break;
             }
         }

@@ -89,13 +89,6 @@ pub enum CompileError {
     DuplicateIdentifierInSameScope(Rc<Identifier>),
 }
 
-impl CompileError {
-    /// # Panics
-    pub fn report(self) -> ! {
-        panic!("{self}")
-    }
-}
-
 impl Display for CompileError {
     #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

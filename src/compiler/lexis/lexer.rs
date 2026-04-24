@@ -13,30 +13,26 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    #[must_use]
-    pub fn new(code: &str) -> Lexer {
+    /// # Errors
+    pub fn new(code: &str) -> CompileResult<Lexer> {
         let mut lexer = Lexer {
             reader: Reader::new(code),
             next_token: None,
         };
-        match lexer.pump_token() {
-            Ok(()) => lexer,
-            Err(e) => e.report(),
-        }
+        lexer.pump_token()?;
+        Ok(lexer)
     }
 
     pub fn peek(&mut self) -> Option<&Token> {
         self.next_token.as_ref()
     }
 
-    pub fn next(&mut self) {
+    /// # Errors
+    pub fn advance(&mut self) -> CompileResult<()> {
         if self.next_token.is_none() {
-            return;
+            return Ok(());
         }
-        match self.pump_token() {
-            Ok(()) => (),
-            Err(e) => e.report(),
-        }
+        self.pump_token()
     }
 
     fn pump_token(&mut self) -> CompileResult<()> {

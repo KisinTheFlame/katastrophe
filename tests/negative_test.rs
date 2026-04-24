@@ -163,3 +163,21 @@ fn test_access_target_must_be_struct() {
         |error| matches!(error, CompileError::AccessTargetNotStruct(field) if field.as_str() == "age"),
     );
 }
+
+#[test]
+fn test_lex_error_at_file_start() {
+    assert_compile_fails("$", |error| matches!(error, CompileError::UnexpectedCharacter('$')));
+}
+
+#[test]
+fn test_lex_error_after_consumed_token() {
+    assert_compile_fails(
+        "
+        def main() -> i32 {
+            return 0;
+            $
+        }
+        ",
+        |error| matches!(error, CompileError::UnexpectedCharacter('$')),
+    );
+}

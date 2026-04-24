@@ -83,6 +83,6 @@ fn load_package(context: &mut Context, path: Rc<DocumentPath>) -> CompileResult<
     let Ok(code) = fs::read_to_string(file_path) else {
         return Err(CompileError::UnknownPackage);
     };
-    Parser::new(path, &code).parse_document(context)?;
+    Parser::new(path, &code)?.parse_document(context)?;
     Ok(())
 }
