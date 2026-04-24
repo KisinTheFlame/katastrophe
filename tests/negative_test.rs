@@ -111,6 +111,20 @@ fn test_process_statement_in_global_scope() {
 }
 
 #[test]
+fn test_global_initializer_must_be_constant() {
+    assert_compile_fails(
+        "
+        let x = 1 + 2;
+
+        def main() -> i32 {
+            return x;
+        }
+        ",
+        |error| matches!(error, CompileError::GlobalInitializerNotConstant),
+    );
+}
+
+#[test]
 fn test_float_literal_is_unsupported() {
     assert_compile_fails(
         "

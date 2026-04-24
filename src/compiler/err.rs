@@ -58,6 +58,7 @@ pub enum CompileError {
     UndefinedUnaryExpression(Unary, Rc<Type>),
     UndefinedBinaryExpression(Binary, Rc<Type>, Rc<Type>),
     ProcessInGlobal,
+    GlobalInitializerNotConstant,
 
     ReturnTypeMismatch {
         expected: Rc<Type>,
@@ -176,6 +177,9 @@ impl Display for CompileError {
             }
             CompileError::ProcessInGlobal => {
                 write!(f, "process statements found in global.")
+            }
+            CompileError::GlobalInitializerNotConstant => {
+                write!(f, "global initializer must be a supported constant expression.")
             }
             CompileError::ReturnTypeMismatch { expected, returned } => {
                 write!(f, "return type mismatch. expected: {expected}, returned: {returned}.")

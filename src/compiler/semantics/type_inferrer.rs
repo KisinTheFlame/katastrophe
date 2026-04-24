@@ -345,6 +345,9 @@ impl TypeInferrer {
         }
         let reference = Reference::Binding(lvalue_type.clone(), *mutability).into();
         if self.scope.is_global() {
+            if !Self::is_supported_global_initializer(expression.as_ref()) {
+                return Err(CompileError::GlobalInitializerNotConstant);
+            }
             self.scope.declare(identifier.clone(), reference)?;
         } else {
             self.scope.overwrite(identifier.clone(), reference)?;
@@ -353,6 +356,13 @@ impl TypeInferrer {
             Variable(identifier.clone(), lvalue_type, *mutability),
             expression,
         )))
+    }
+
+    fn is_supported_global_initializer(expression: &Expression) -> bool {
+        matches!(
+            expression,
+            Expression::IntLiteral(_) | Expression::CharLiteral(_) | Expression::BoolLiteral(_)
+        )
     }
 
     fn infer_define_statement(
