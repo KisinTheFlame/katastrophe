@@ -67,6 +67,20 @@ fn test_assign_type_mismatch() {
 }
 
 #[test]
+fn test_duplicate_local_identifier() {
+    assert_compile_fails(
+        "
+        def main() -> i32 {
+            let x = 1;
+            let x = 2;
+            return x;
+        }
+        ",
+        |error| matches!(error, CompileError::DuplicateIdentifierInSameScope(identifier) if identifier.as_str() == "x"),
+    );
+}
+
+#[test]
 fn test_condition_must_be_bool() {
     assert_compile_fails(
         "

@@ -50,9 +50,14 @@ impl LValueChecker {
     fn check_statement(&mut self, context: &Context, statement: &Statement) -> CompileResult<()> {
         match statement {
             Statement::Empty | Statement::Return(_) | Statement::Struct(_) => Ok(()),
-            Statement::Block(statements) => statements
-                .iter()
-                .try_for_each(|statement| self.check_statement(context, statement)),
+            Statement::Block(statements) => {
+                self.scope.enter(Tag::Anonymous);
+                statements
+                    .iter()
+                    .try_for_each(|statement| self.check_statement(context, statement))?;
+                self.scope.leave(&Tag::Anonymous);
+                Ok(())
+            }
             Statement::Define(DefineDetail {
                 prototype,
                 builtin,
@@ -97,11 +102,7 @@ impl LValueChecker {
                 Ok(())
             }
             Statement::Let(LetDetail(Variable(identifier, _, mutability), _)) => {
-                if self.scope.is_global() {
-                    self.scope.declare(identifier.clone(), *mutability)?;
-                } else {
-                    self.scope.overwrite(identifier.clone(), *mutability)?;
-                }
+                self.scope.declare(identifier.clone(), *mutability)?;
                 Ok(())
             }
             Statement::Expression(expression) => match expression.as_ref() {

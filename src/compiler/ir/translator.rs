@@ -97,7 +97,7 @@ impl Translator {
                 let memory = Memory::Stack(format!("v{id}.{symbol}")).into();
                 let value = Rc::new(Value::Pointer(memory));
                 self.scope
-                    .overwrite(symbol, IrReference::Binding((value.clone(), data_type)))?;
+                    .declare(symbol, IrReference::Binding((value.clone(), data_type)))?;
                 value
             }
             DeclType::Global(symbol, data_type) => {
@@ -422,7 +422,7 @@ impl Translator {
                     fields: fields.clone(),
                 };
                 let ir_type = Rc::new(ir_type);
-                let pointer = self.declare(DeclType::Local(format!("sp.{name}").into(), ir_type.clone()))?;
+                let pointer = self.declare(DeclType::AnonymousLocal)?;
                 let fields = field_values
                     .iter()
                     .zip(fields.iter().map(Rc::as_ref).map(|IrField(_, field_type)| field_type))
