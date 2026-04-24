@@ -109,3 +109,30 @@ fn test_process_statement_in_global_scope() {
         |error| matches!(error, CompileError::ProcessInGlobal),
     );
 }
+
+#[test]
+fn test_float_literal_is_unsupported() {
+    assert_compile_fails(
+        "
+        def main() -> i32 {
+            let x = 1.0;
+            return 0;
+        }
+        ",
+        |error| matches!(error, CompileError::UnsupportedFeature("float literal")),
+    );
+}
+
+#[test]
+fn test_non_std_package_path_is_unsupported() {
+    assert_compile_fails(
+        "
+        using app::io::putchar;
+
+        def main() -> i32 {
+            return 0;
+        }
+        ",
+        |error| matches!(error, CompileError::UnsupportedFeature("non-std package path")),
+    );
+}

@@ -172,7 +172,7 @@ impl TypeInferrer {
                 Expression::CharLiteral(*literal).into(),
                 Type::Int(BitWidth::Bit8).into(),
             ),
-            Expression::FloatLiteral(_) => todo!(),
+            Expression::FloatLiteral(_) => return Err(CompileError::UnsupportedFeature("float literal")),
             Expression::BoolLiteral(value) => (Expression::BoolLiteral(*value).into(), Type::Bool.into()),
             Expression::Unary(operator, _, child) => {
                 let (child, result_type) = self.infer_expression(child)?;

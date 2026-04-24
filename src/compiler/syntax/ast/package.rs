@@ -52,7 +52,7 @@ pub fn load_package_path(context: &mut Context, path: Rc<DocumentPath>) -> Compi
 
 #[must_use]
 pub fn get_builtin(path: &Rc<DocumentPath>, id: &String, value: &Value) -> Option<String> {
-    let document_path = get_package_path(path);
+    let document_path = get_package_path(path)?;
     let file_path = format!("{document_path}/builtin/{id}.ll");
     match fs::read_to_string(file_path) {
         Ok(code) => Some(code.replace("{value}", value.to_string().as_str())),
@@ -60,12 +60,12 @@ pub fn get_builtin(path: &Rc<DocumentPath>, id: &String, value: &Value) -> Optio
     }
 }
 
-fn get_package_path(document_path: &Rc<DocumentPath>) -> String {
+fn get_package_path(document_path: &Rc<DocumentPath>) -> Option<String> {
     let DocumentPath(path_nodes) = document_path.as_ref();
     let root_directory = &path_nodes[0];
     match root_directory.as_str() {
-        "std" => get_std_package_path(document_path),
-        _ => todo!(),
+        "std" => Some(get_std_package_path(document_path)),
+        _ => None,
     }
 }
 
@@ -76,7 +76,10 @@ fn get_std_package_path(document_path: &Rc<DocumentPath>) -> String {
 }
 
 fn load_package(context: &mut Context, path: Rc<DocumentPath>) -> CompileResult<()> {
-    let file_path = get_package_path(&path) + ".katas";
+    let Some(package_path) = get_package_path(&path) else {
+        return Err(CompileError::UnsupportedFeature("non-std package path"));
+    };
+    let file_path = package_path + ".katas";
     let Ok(code) = fs::read_to_string(file_path) else {
         return Err(CompileError::UnknownPackage);
     };

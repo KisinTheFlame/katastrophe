@@ -77,6 +77,7 @@ pub enum CompileError {
         from_type: Rc<Type>,
         to_type: Rc<Type>,
     },
+    UnsupportedFeature(&'static str),
 
     UndeclaredMainFunction,
     IllegalMainFunctionType,
@@ -225,6 +226,9 @@ impl Display for CompileError {
             }
             CompileError::IllegalCast { from_type, to_type } => {
                 write!(f, "illegal cast from {from_type} to {to_type}")
+            }
+            CompileError::UnsupportedFeature(feature) => {
+                write!(f, "unsupported feature: {feature}")
             }
             CompileError::UndeclaredMainFunction => {
                 write!(f, "main function not declared in input document.")

@@ -388,7 +388,7 @@ impl Translator {
                 Instruction::NoOperation.into(),
                 Value::ImmediateI8(*literal as i8).into(),
             )),
-            Expression::FloatLiteral(_) => todo!(),
+            Expression::FloatLiteral(_) => sys_error!("float literal should be rejected before ir translation"),
             Expression::BoolLiteral(literal) => {
                 Ok((Instruction::NoOperation.into(), Value::ImmediateBool(*literal).into()))
             }
