@@ -89,7 +89,7 @@ pub fn compile_to_ir(source_code: &str) -> CompileResult<String> {
 pub fn compile_to_executable(source_code: &str) -> CompileResult<String> {
     let ir_code = compile_to_ir(source_code)?;
     let path = gen_tmp_exe_path();
-    assemble(ir_code, path.clone());
+    assemble(ir_code, &path)?;
     Ok(path)
 }
 

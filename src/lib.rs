@@ -100,19 +100,26 @@ pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> 
     Ok(ir_code)
 }
 
-/// # Panics
-pub fn assemble(ir_code: String, output_path: String) {
+/// # Errors
+pub fn assemble(ir_code: String, output_path: &str) -> CompileResult<()> {
     let temp_ir_path = gen_tmp_ir_path();
-    fs::write(&temp_ir_path, ir_code).expect("failed to open a temp ir file");
+    fs::write(&temp_ir_path, ir_code).map_err(|error| CompileError::FileWriteFailed {
+        path: temp_ir_path.clone(),
+        error: error.to_string(),
+    })?;
 
     let link_result = Command::new("clang")
         .arg(&temp_ir_path)
         .arg("-o")
         .arg(output_path)
         .output()
-        .expect("failed to compile ir.");
+        .map_err(|error| CompileError::ExternalCommandFailed {
+            command: "clang",
+            error: error.to_string(),
+        })?;
     if !link_result.status.success() {
-        let error = String::from_utf8(link_result.stderr).expect("failed to read stderr");
-        panic!("{error}");
+        let error = String::from_utf8_lossy(&link_result.stderr).into_owned();
+        return Err(CompileError::LinkFailed(error));
     }
+    Ok(())
 }

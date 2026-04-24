@@ -87,6 +87,21 @@ pub enum CompileError {
     BuiltinFileNotExist,
     BuiltinFunctionFileNotExist(Rc<Identifier>),
 
+    // Environment Errors
+    FileReadFailed {
+        path: String,
+        error: String,
+    },
+    FileWriteFailed {
+        path: String,
+        error: String,
+    },
+    ExternalCommandFailed {
+        command: &'static str,
+        error: String,
+    },
+    LinkFailed(String),
+
     DuplicateIdentifierInSameScope(Rc<Identifier>),
 }
 
@@ -240,6 +255,20 @@ impl Display for CompileError {
             }
             CompileError::BuiltinFunctionFileNotExist(identifier) => {
                 write!(f, "builtin function {identifier} file not exist")
+            }
+
+            // Environment Errors
+            CompileError::FileReadFailed { path, error } => {
+                write!(f, "failed to read file '{path}': {error}")
+            }
+            CompileError::FileWriteFailed { path, error } => {
+                write!(f, "failed to write file '{path}': {error}")
+            }
+            CompileError::ExternalCommandFailed { command, error } => {
+                write!(f, "failed to run external command '{command}': {error}")
+            }
+            CompileError::LinkFailed(error) => {
+                write!(f, "failed to link executable:\n{error}")
             }
 
             CompileError::DuplicateIdentifierInSameScope(identifier) => {

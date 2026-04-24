@@ -11,6 +11,7 @@ use indoc::formatdoc;
 use katastrophe::CompileResult;
 use katastrophe::assemble;
 use katastrophe::compiler::context::Context;
+use katastrophe::compiler::err::CompileError;
 use katastrophe::compiler::semantics::main_function_checker::main_function_check;
 use katastrophe::ir_generate;
 use katastrophe::ir_translate;
@@ -162,9 +163,10 @@ fn execute() -> CompileResult<()> {
     let input_filename = options.input_path.unwrap();
     let mut output_path = options.output_path.unwrap();
 
-    let Ok(code) = fs::read_to_string(input_filename) else {
-        panic!("encountering fatal error when reading file");
-    };
+    let code = fs::read_to_string(&input_filename).map_err(|error| CompileError::FileReadFailed {
+        path: input_filename,
+        error: error.to_string(),
+    })?;
 
     let mut context = Context::new();
 
@@ -196,7 +198,10 @@ fn execute() -> CompileResult<()> {
             })
             .collect::<Rc<_>>()
             .join("\n");
-        fs::write(output_path, output).expect("failed to write ast.");
+        fs::write(&output_path, output).map_err(|error| CompileError::FileWriteFailed {
+            path: output_path.clone(),
+            error: error.to_string(),
+        })?;
         return Ok(());
     }
 
@@ -208,11 +213,14 @@ fn execute() -> CompileResult<()> {
         if !output_path.contains('.') {
             output_path.push_str(".ll");
         }
-        fs::write(output_path, ir_code).expect("failed to write ir.");
+        fs::write(&output_path, ir_code).map_err(|error| CompileError::FileWriteFailed {
+            path: output_path.clone(),
+            error: error.to_string(),
+        })?;
         return Ok(());
     }
 
-    assemble(ir_code, output_path);
+    assemble(ir_code, &output_path)?;
 
     Ok(())
 }
