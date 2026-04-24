@@ -4,6 +4,7 @@ use std::fmt::{self};
 use std::rc::Rc;
 
 use crate::CompileResult;
+use crate::sys_error;
 
 use super::err::CompileError;
 use super::syntax::ast::crumb::Identifier;
@@ -68,19 +69,15 @@ impl<T: Clone> Scope<T> {
         self.current_layer = Some(new_layer);
     }
 
-    pub fn leave(&mut self, tag: Tag) -> CompileResult<()> {
+    pub fn leave(&mut self, tag: &Tag) {
         if self.current_layer.is_none() {
-            return Err(CompileError::NullScope);
+            sys_error!("leaving scope {tag} from empty scope stack");
         }
         let layer = self.current_layer.take().unwrap();
-        if layer.tag != tag {
-            return Err(CompileError::ScopeMismatch {
-                expected: tag,
-                encountered: layer.tag,
-            });
+        if layer.tag != *tag {
+            sys_error!("scope mismatch. expected {tag}, encountered {}.", layer.tag);
         }
         self.current_layer = layer.outer;
-        Ok(())
     }
 
     pub fn declare(&mut self, symbol: Rc<Identifier>, symbol_info: T) -> CompileResult<()> {
@@ -99,27 +96,35 @@ impl<T: Clone> Scope<T> {
     }
 
     fn execute<S>(&self, f: impl FnOnce(&Box<Layer<T>>) -> CompileResult<S>) -> CompileResult<S> {
-        self.current_layer.as_ref().map_or(Err(CompileError::NullScope), f)
+        match self.current_layer.as_ref() {
+            Some(layer) => f(layer),
+            None => sys_error!("using scope before entering a layer"),
+        }
     }
 
     fn execute_mut<S>(&mut self, f: impl FnOnce(&mut Box<Layer<T>>) -> CompileResult<S>) -> CompileResult<S> {
-        self.current_layer.as_mut().map_or(Err(CompileError::NullScope), f)
+        match self.current_layer.as_mut() {
+            Some(layer) => f(layer),
+            None => sys_error!("using scope before entering a layer"),
+        }
     }
 
     pub fn exist(&self, symbol: &String) -> CompileResult<bool> {
         Ok(self.lookup(symbol)?.is_some())
     }
 
-    pub fn is_global(&self) -> CompileResult<bool> {
-        self.current_layer
-            .as_ref()
-            .map_or(Err(CompileError::NullScope), |layer| Ok(layer.tag == Tag::Global))
+    pub fn is_global(&self) -> bool {
+        match self.current_layer.as_ref() {
+            Some(layer) => layer.tag == Tag::Global,
+            None => sys_error!("checking global scope before entering a layer"),
+        }
     }
 
-    pub fn current_function(&self) -> CompileResult<Rc<Identifier>> {
-        self.current_layer
-            .as_ref()
-            .map_or(Err(CompileError::NullScope), |layer| layer.get_current_function_name())
+    pub fn current_function(&self) -> Rc<Identifier> {
+        match self.current_layer.as_ref() {
+            Some(layer) => layer.get_current_function_name(),
+            None => sys_error!("checking current function before entering a layer"),
+        }
     }
 }
 
@@ -179,13 +184,14 @@ impl<T: Clone> Layer<T> {
         }
     }
 
-    pub fn get_current_function_name(&self) -> CompileResult<Rc<Identifier>> {
+    pub fn get_current_function_name(&self) -> Rc<Identifier> {
         if let Tag::Function(name) = &self.tag {
-            return Ok(name.clone());
+            return name.clone();
         }
-        self.outer.as_ref().map_or(Err(CompileError::NotInFunction), |outer| {
-            outer.get_current_function_name()
-        })
+        self.outer.as_ref().map_or_else(
+            || sys_error!("current scope is not inside a function"),
+            |outer| outer.get_current_function_name(),
+        )
     }
 }
 

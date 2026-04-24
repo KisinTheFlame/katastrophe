@@ -493,14 +493,14 @@ impl Parser {
         let builtin = self.expect_keyword(Keyword::Builtin);
         let prototype = self.parse_function_prototype()?;
         let identifier = &prototype.identifier;
-        if self.scope.is_global()? {
+        if self.scope.is_global() {
             let function_type = prototype.function_type.clone();
             let function_reference = Reference::Binding(function_type, Mutability::Immutable).into();
             self.reference_map.insert(identifier.clone(), function_reference);
         }
         self.scope.enter(Tag::Function(identifier.clone()));
         let body = self.parse_block_statement(context)?.into();
-        self.scope.leave(Tag::Function(identifier.clone()))?;
+        self.scope.leave(&Tag::Function(identifier.clone()));
         let define_detail = DefineDetail {
             prototype: prototype.into(),
             builtin,
@@ -526,7 +526,7 @@ impl Parser {
         self.digest_symbol(Symbol::Assign)?;
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;
-        if self.scope.is_global()? {
+        if self.scope.is_global() {
             let reference = Reference::Binding(lvalue_type.clone(), mutability).into();
             self.reference_map.insert(lvalue.clone(), reference);
         }
@@ -618,7 +618,7 @@ impl Parser {
         while self.lexer.peek().is_some() {
             statements.push(self.parse_statement(context)?.into());
         }
-        self.scope.leave(Tag::Global)?;
+        self.scope.leave(&Tag::Global);
 
         let document = Document {
             statements: statements.into(),

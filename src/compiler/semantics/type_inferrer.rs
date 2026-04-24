@@ -257,7 +257,7 @@ impl TypeInferrer {
             }
             None => (None, Type::Never.into()),
         };
-        let function_name = self.scope.current_function()?;
+        let function_name = self.scope.current_function();
         let function_type = self.scope.lookup(&function_name)?.unwrap();
         let Reference::Binding(function_type, _) = function_type.as_ref() else {
             return Err(CompileError::ShouldBeFunctionType);
@@ -294,12 +294,12 @@ impl TypeInferrer {
         }
         self.scope.enter(Tag::Anonymous);
         let true_body = self.infer_statement(context, true_body)?;
-        self.scope.leave(Tag::Anonymous)?;
+        self.scope.leave(&Tag::Anonymous);
         let false_body = match false_body {
             Some(false_body) => {
                 self.scope.enter(Tag::Anonymous);
                 let false_body = self.infer_statement(context, false_body)?;
-                self.scope.leave(Tag::Anonymous)?;
+                self.scope.leave(&Tag::Anonymous);
                 Some(false_body)
             }
             None => None,
@@ -322,7 +322,7 @@ impl TypeInferrer {
         }
         self.scope.enter(Tag::Named("while"));
         let body = self.infer_statement(context, body)?;
-        self.scope.leave(Tag::Named("while"))?;
+        self.scope.leave(&Tag::Named("while"));
         Ok(Statement::While(WhileDetail(condition, body)))
     }
 
@@ -342,7 +342,7 @@ impl TypeInferrer {
             });
         }
         let reference = Reference::Binding(lvalue_type.clone(), *mutability).into();
-        if self.scope.is_global()? {
+        if self.scope.is_global() {
             self.scope.declare(identifier.clone(), reference)?;
         } else {
             self.scope.overwrite(identifier.clone(), reference)?;
@@ -381,7 +381,7 @@ impl TypeInferrer {
                 self.scope.declare(identifier.clone(), reference)
             })?;
         let body = self.infer_statement(context, body)?;
-        self.scope.leave(Tag::Function(identifier.clone()))?;
+        self.scope.leave(&Tag::Function(identifier.clone()));
         Ok(Statement::Define(DefineDetail {
             prototype: FunctionPrototype {
                 identifier: identifier.clone(),
@@ -407,7 +407,7 @@ impl TypeInferrer {
                     .iter()
                     .map(|statement| self.infer_statement(context, statement))
                     .collect::<Result<Rc<_>, _>>()?;
-                self.scope.leave(Tag::Anonymous)?;
+                self.scope.leave(&Tag::Anonymous);
                 Statement::Block(statements)
             }
             Statement::Return(return_value) => Statement::Return(self.infer_return_statement(return_value.clone())?),
@@ -562,7 +562,7 @@ impl TypeInferrer {
             .map(|statement| self.infer_statement(context, statement))
             .collect::<Result<Rc<_>, _>>()?;
         context.document_map.insert(id, Document { statements });
-        self.scope.leave(Tag::Global)?;
+        self.scope.leave(&Tag::Global);
         Ok(())
     }
 }

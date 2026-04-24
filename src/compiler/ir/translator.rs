@@ -133,7 +133,7 @@ impl Translator {
             .iter()
             .map(|statement| self.translate_statement(context, statement))
             .collect::<Result<Rc<_>, _>>()?;
-        self.scope.leave(Tag::Named("block"))?;
+        self.scope.leave(&Tag::Named("block"));
         Ok(Instruction::Batch(instructions).into())
     }
 
@@ -601,7 +601,7 @@ impl Translator {
     ) -> CompileResult<Rc<Instruction>> {
         let data_type = IrType::from(var_type.as_ref()).into();
         let (expression_instructions, expression) = self.translate_expression(expression)?;
-        let assign_instruction = if self.scope.is_global()? {
+        let assign_instruction = if self.scope.is_global() {
             let Some(IrReference::Binding((lvalue, _))) = self.scope.lookup(identifier)? else {
                 sys_error!("must find it.");
             };
@@ -634,7 +634,7 @@ impl Translator {
             return Ok(Instruction::ReturnVoid.into());
         };
         let (expression_instructions, expression) = self.translate_expression(&return_value)?;
-        let function_name = self.scope.current_function()?;
+        let function_name = self.scope.current_function();
         let Some(IrReference::Binding((_, function_type))) = self.scope.lookup(&function_name)? else {
             sys_error!("must be a function type");
         };
@@ -706,7 +706,7 @@ impl Translator {
             },
         ];
         let body = Instruction::Batch(body_instructions.into()).into();
-        self.scope.leave(Tag::Function(identifier.clone()))?;
+        self.scope.leave(&Tag::Function(identifier.clone()));
 
         let definition = Instruction::Definition(
             IrFunctionPrototype {
@@ -855,7 +855,7 @@ impl Translator {
         };
         let instruction = self.translate_document(context, document)?;
         context.instruction.insert(document_id, instruction);
-        self.scope.leave(Tag::Global)?;
+        self.scope.leave(&Tag::Global);
         Ok(())
     }
 }

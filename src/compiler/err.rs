@@ -7,7 +7,6 @@ use crate::util::common::Array;
 use super::lexis::token::Keyword;
 use super::lexis::token::Symbol;
 use super::lexis::token::Token;
-use super::scope::Tag;
 use super::syntax::ast::crumb::Identifier;
 use super::syntax::ast::operator::Binary;
 use super::syntax::ast::operator::Unary;
@@ -86,15 +85,7 @@ pub enum CompileError {
     BuiltinFileNotExist,
     BuiltinFunctionFileNotExist(Rc<Identifier>),
 
-    // Scope Errors
-    NullScope,
-    ScopeMismatch {
-        expected: Tag,
-        encountered: Tag,
-    },
     DuplicateIdentifierInSameScope(Rc<Identifier>),
-
-    NotInFunction,
 }
 
 impl CompileError {
@@ -250,18 +241,8 @@ impl Display for CompileError {
                 write!(f, "builtin function {identifier} file not exist")
             }
 
-            // Scope Errors
-            CompileError::NullScope => {
-                write!(f, "null scope.")
-            }
-            CompileError::ScopeMismatch { expected, encountered } => {
-                write!(f, "scope mismatch. expected {expected}, encountered {encountered}.")
-            }
             CompileError::DuplicateIdentifierInSameScope(identifier) => {
                 write!(f, "encountered duplicate identifier {identifier} in same scope.")
-            }
-            CompileError::NotInFunction => {
-                write!(f, "outside any function.")
             }
         }
     }

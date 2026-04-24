@@ -43,7 +43,7 @@ impl LValueChecker {
             .statements
             .iter()
             .try_for_each(|statement| self.check_statement(context, statement))?;
-        self.scope.leave(Tag::Global)?;
+        self.scope.leave(&Tag::Global);
         Ok(())
     }
 
@@ -75,29 +75,29 @@ impl LValueChecker {
                         self.scope.declare(parameter_id.clone(), Mutability::Immutable)
                     })?;
                 self.check_statement(context, body)?;
-                self.scope.leave(Tag::Function(identifier.clone()))?;
+                self.scope.leave(&Tag::Function(identifier.clone()));
                 Ok(())
             }
             Statement::If(if_detail) => {
                 self.scope.enter(Tag::Anonymous);
                 self.check_statement(context, &if_detail.true_body)?;
-                self.scope.leave(Tag::Anonymous)?;
+                self.scope.leave(&Tag::Anonymous);
 
                 if_detail.false_body.as_ref().map_or(Ok(()), |body| {
                     self.scope.enter(Tag::Anonymous);
                     self.check_statement(context, body)?;
-                    self.scope.leave(Tag::Anonymous)?;
+                    self.scope.leave(&Tag::Anonymous);
                     Ok(())
                 })
             }
             Statement::While(WhileDetail(_, body)) => {
                 self.scope.enter(Tag::Named("while"));
                 self.check_statement(context, body)?;
-                self.scope.leave(Tag::Named("while"))?;
+                self.scope.leave(&Tag::Named("while"));
                 Ok(())
             }
             Statement::Let(LetDetail(Variable(identifier, _, mutability), _)) => {
-                if self.scope.is_global()? {
+                if self.scope.is_global() {
                     self.scope.declare(identifier.clone(), *mutability)?;
                 } else {
                     self.scope.overwrite(identifier.clone(), *mutability)?;
