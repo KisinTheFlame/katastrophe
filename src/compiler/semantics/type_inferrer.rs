@@ -140,7 +140,7 @@ impl TypeInferrer {
     ) -> Result<(Rc<Expression>, Rc<Type>), CompileError> {
         let (expression, struct_type) = self.infer_expression(expression)?;
         let Type::Struct { id: _, name: _, fields } = struct_type.as_ref() else {
-            return Err(CompileError::ShouldBeStructType);
+            return Err(CompileError::AccessTargetNotStruct(field.clone()));
         };
         let field_type = fields
             .iter()
@@ -207,14 +207,14 @@ impl TypeInferrer {
                     return Err(CompileError::UndeclaredIdentifier(function_id.clone()));
                 };
                 let Reference::Binding(function_type, _) = function_type.as_ref() else {
-                    return Err(CompileError::ShouldBeFunctionType);
+                    return Err(CompileError::CallTargetNotFunction(function_id.clone()));
                 };
                 let Type::Function {
                     return_type,
                     parameter_types,
                 } = function_type.as_ref()
                 else {
-                    return Err(CompileError::ShouldBeFunctionType);
+                    return Err(CompileError::CallTargetNotFunction(function_id.clone()));
                 };
                 let result_type = if argument_types == *parameter_types {
                     return_type.clone()
@@ -258,16 +258,18 @@ impl TypeInferrer {
             None => (None, Type::Never.into()),
         };
         let function_name = self.scope.current_function();
-        let function_type = self.scope.lookup(&function_name)?.unwrap();
+        let Some(function_type) = self.scope.lookup(&function_name)? else {
+            sys_error!("current function must be declared in scope");
+        };
         let Reference::Binding(function_type, _) = function_type.as_ref() else {
-            return Err(CompileError::ShouldBeFunctionType);
+            sys_error!("current function reference must be a binding");
         };
         let Type::Function {
             return_type: expected_type,
             parameter_types: _,
         } = function_type.as_ref()
         else {
-            return Err(CompileError::ShouldBeFunctionType);
+            sys_error!("current function binding must have function type");
         };
         if return_type == *expected_type {
             Ok(return_value)

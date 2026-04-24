@@ -45,8 +45,8 @@ pub enum CompileError {
     AssigningImmutableVariable(Rc<Identifier>),
 
     // Type Errors
-    ShouldBeFunctionType,
-    ShouldBeStructType,
+    CallTargetNotFunction(Rc<Identifier>),
+    AccessTargetNotStruct(Rc<Identifier>),
     FieldNotExist(Rc<Identifier>),
     FieldTypeNotMatch {
         field_name: Rc<Identifier>,
@@ -147,11 +147,11 @@ impl Display for CompileError {
             }
 
             // Type Errors
-            CompileError::ShouldBeFunctionType => {
-                write!(f, "should be a function type.")
+            CompileError::CallTargetNotFunction(identifier) => {
+                write!(f, "call target '{identifier}' is not a function.")
             }
-            CompileError::ShouldBeStructType => {
-                write!(f, "should be a struct type.")
+            CompileError::AccessTargetNotStruct(field) => {
+                write!(f, "cannot access field '{field}' on a non-struct value.")
             }
             CompileError::FieldNotExist(field_name) => {
                 write!(f, "field '{field_name}' does not exists.")

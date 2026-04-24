@@ -136,3 +136,30 @@ fn test_non_std_package_path_is_unsupported() {
         |error| matches!(error, CompileError::UnsupportedFeature("non-std package path")),
     );
 }
+
+#[test]
+fn test_call_target_must_be_function() {
+    assert_compile_fails(
+        "
+        def main() -> i32 {
+            let x = 1;
+            x();
+            return 0;
+        }
+        ",
+        |error| matches!(error, CompileError::CallTargetNotFunction(identifier) if identifier.as_str() == "x"),
+    );
+}
+
+#[test]
+fn test_access_target_must_be_struct() {
+    assert_compile_fails(
+        "
+        def main() -> i32 {
+            let x = 1;
+            return x.age;
+        }
+        ",
+        |error| matches!(error, CompileError::AccessTargetNotStruct(field) if field.as_str() == "age"),
+    );
+}
