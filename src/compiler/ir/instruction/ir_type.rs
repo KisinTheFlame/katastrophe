@@ -90,6 +90,7 @@ impl PartialEq for IrType {
         use IrType::Bool;
         use IrType::Function;
         use IrType::Int;
+        use IrType::Struct;
         use IrType::Void;
         match (self, other) {
             (Void, Void) | (Bool, Bool) => true,
@@ -104,10 +105,13 @@ impl PartialEq for IrType {
                     parameter_types: p2,
                 },
             ) => r1 == r2 && p1 == p2,
+            (Struct { id: id1, .. }, Struct { id: id2, .. }) => id1 == id2,
             (_, _) => false,
         }
     }
 }
+
+impl Eq for IrType {}
 
 /// # Panics
 pub fn find_field(object_type: &Rc<IrType>, field: &Rc<Identifier>) -> (usize, Rc<IrType>) {
@@ -121,4 +125,29 @@ pub fn find_field(object_type: &Rc<IrType>, field: &Rc<Identifier>) -> (usize, R
         .find(|(_, IrField(field_name, _))| field_name == field)
         .unwrap();
     (index, field_type.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use super::IrType;
+
+    fn struct_type(id: u32) -> IrType {
+        IrType::Struct {
+            id,
+            name: Rc::new(String::from("Person")),
+            fields: [].into(),
+        }
+    }
+
+    #[test]
+    fn struct_type_equals_same_id() {
+        assert!(struct_type(1) == struct_type(1));
+    }
+
+    #[test]
+    fn struct_type_not_equals_different_id() {
+        assert!(struct_type(1) != struct_type(2));
+    }
 }

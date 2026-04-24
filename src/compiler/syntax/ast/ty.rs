@@ -44,6 +44,7 @@ impl PartialEq for Type {
                     parameter_types: p2,
                 },
             ) => r1 == r2 && p1 == p2,
+            (Type::Struct { id: id1, .. }, Type::Struct { id: id2, .. }) => id1 == id2,
             (_, _) => false,
         }
     }
@@ -86,5 +87,30 @@ impl Display for Type {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use super::Type;
+
+    fn struct_type(id: u32) -> Type {
+        Type::Struct {
+            id,
+            name: Rc::new(String::from("Person")),
+            fields: [].into(),
+        }
+    }
+
+    #[test]
+    fn struct_type_equals_same_id() {
+        assert!(struct_type(1) == struct_type(1));
+    }
+
+    #[test]
+    fn struct_type_not_equals_different_id() {
+        assert!(struct_type(1) != struct_type(2));
     }
 }
