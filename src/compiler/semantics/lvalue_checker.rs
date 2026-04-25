@@ -38,12 +38,11 @@ impl LValueChecker {
         let Some(document) = context.document_map.get(&document_id) else {
             sys_error!("document must exist");
         };
-        self.scope.enter(Tag::Global);
+        let _global_scope = self.scope.enter(Tag::Global);
         document
             .statements
             .iter()
             .try_for_each(|statement| self.check_statement(context, statement))?;
-        self.scope.leave(&Tag::Global);
         Ok(())
     }
 
@@ -51,11 +50,10 @@ impl LValueChecker {
         match statement {
             Statement::Empty | Statement::Return(_) | Statement::Struct(_) => Ok(()),
             Statement::Block(statements) => {
-                self.scope.enter(Tag::Anonymous);
+                let _block_scope = self.scope.enter(Tag::Anonymous);
                 statements
                     .iter()
                     .try_for_each(|statement| self.check_statement(context, statement))?;
-                self.scope.leave(&Tag::Anonymous);
                 Ok(())
             }
             Statement::Define(DefineDetail {
@@ -72,7 +70,7 @@ impl LValueChecker {
                 if *builtin {
                     return Ok(());
                 }
-                self.scope.enter(Tag::Function(identifier.clone()));
+                let _function_scope = self.scope.enter(Tag::Function(identifier.clone()));
                 parameters
                     .iter()
                     .map(Rc::as_ref)
@@ -80,32 +78,29 @@ impl LValueChecker {
                         self.scope.declare(parameter_id.clone(), Mutability::Immutable)
                     })?;
                 self.check_statement(context, body)?;
-                self.scope.leave(&Tag::Function(identifier.clone()));
                 Ok(())
             }
             Statement::If(if_detail) => {
-                self.scope.enter(Tag::Anonymous);
-                self.check_statement(context, &if_detail.true_body)?;
-                self.scope.leave(&Tag::Anonymous);
-
+                {
+                    let _true_scope = self.scope.enter(Tag::Anonymous);
+                    self.check_statement(context, &if_detail.true_body)?;
+                }
                 if_detail.false_body.as_ref().map_or(Ok(()), |body| {
-                    self.scope.enter(Tag::Anonymous);
+                    let _false_scope = self.scope.enter(Tag::Anonymous);
                     self.check_statement(context, body)?;
-                    self.scope.leave(&Tag::Anonymous);
                     Ok(())
                 })
             }
             Statement::While(WhileDetail(_, body)) => {
-                self.scope.enter(Tag::Named("while"));
+                let _while_scope = self.scope.enter(Tag::Named("while"));
                 self.check_statement(context, body)?;
-                self.scope.leave(&Tag::Named("while"));
                 Ok(())
             }
             Statement::Let(LetDetail(Variable(identifier, _, mutability), _)) => {
                 if self.scope.is_global() {
                     self.scope.declare(identifier.clone(), *mutability)?;
                 } else {
-                    self.scope.overwrite(identifier.clone(), *mutability)?;
+                    self.scope.overwrite(identifier.clone(), *mutability);
                 }
                 Ok(())
             }
@@ -130,7 +125,7 @@ impl LValueChecker {
         let lvalue = LValue::try_from(lvalue_expression)?;
         let identifier = lvalue.root();
 
-        let Some(mutability) = self.scope.lookup(&identifier)? else {
+        let Some(mutability) = self.scope.lookup(&identifier) else {
             return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
         };
         if mutability == Mutability::Mutable {

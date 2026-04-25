@@ -498,9 +498,8 @@ impl Parser {
             let function_reference = Reference::Binding(function_type, Mutability::Immutable).into();
             self.reference_map.insert(identifier.clone(), function_reference);
         }
-        self.scope.enter(Tag::Function(identifier.clone()));
+        let _function_scope = self.scope.enter(Tag::Function(identifier.clone()));
         let body = self.parse_block_statement(context)?.into();
-        self.scope.leave(&Tag::Function(identifier.clone()));
         let define_detail = DefineDetail {
             prototype: prototype.into(),
             builtin,
@@ -613,12 +612,11 @@ impl Parser {
         context.id_map.insert(self.document_path.clone(), id);
         context.path_map.insert(id, self.document_path.clone());
 
-        self.scope.enter(Tag::Global);
+        let _global_scope = self.scope.enter(Tag::Global);
         let mut statements = Vec::new();
         while self.lexer.peek().is_some() {
             statements.push(self.parse_statement(context)?.into());
         }
-        self.scope.leave(&Tag::Global);
 
         let document = Document {
             statements: statements.into(),

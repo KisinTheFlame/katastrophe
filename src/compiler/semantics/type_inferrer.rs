@@ -85,7 +85,7 @@ impl TypeInferrer {
         name: &Rc<String>,
         fields: &Rc<[Rc<FieldInit>]>,
     ) -> Result<(Rc<Expression>, Rc<Type>), CompileError> {
-        let reference = self.scope.lookup(name)?;
+        let reference = self.scope.lookup(name);
         let reference = reference.as_ref().map(Rc::as_ref);
         let Some(Reference::StructDef(struct_id, _, field_defs)) = reference else {
             return Err(CompileError::UnknownType(name.clone()));
@@ -160,7 +160,7 @@ impl TypeInferrer {
     fn infer_expression(&self, expression: &Rc<Expression>) -> CompileResult<(Rc<Expression>, Rc<Type>)> {
         let result: (Rc<Expression>, Rc<Type>) = match expression.as_ref() {
             Expression::Identifier(identifier) => {
-                let reference = self.scope.lookup(identifier)?;
+                let reference = self.scope.lookup(identifier);
                 let reference = reference.as_ref().map(Rc::as_ref);
                 let Some(Reference::Binding(id_type, _)) = reference else {
                     return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
@@ -203,7 +203,7 @@ impl TypeInferrer {
                     .unzip::<_, _, Vec<_>, Vec<_>>();
                 let arguments: Array<Expression> = arguments.into();
                 let argument_types: Array<Type> = argument_types.into();
-                let Some(function_type) = self.scope.lookup(function_id)? else {
+                let Some(function_type) = self.scope.lookup(function_id) else {
                     return Err(CompileError::UndeclaredIdentifier(function_id.clone()));
                 };
                 let Reference::Binding(function_type, _) = function_type.as_ref() else {
@@ -258,7 +258,7 @@ impl TypeInferrer {
             None => (None, Type::Never.into()),
         };
         let function_name = self.scope.current_function();
-        let Some(function_type) = self.scope.lookup(&function_name)? else {
+        let Some(function_type) = self.scope.lookup(&function_name) else {
             sys_error!("current function must be declared in scope");
         };
         let Reference::Binding(function_type, _) = function_type.as_ref() else {
@@ -294,15 +294,14 @@ impl TypeInferrer {
         if *condition_type != Type::Bool {
             return Err(CompileError::ConditionNeedBool);
         }
-        self.scope.enter(Tag::Anonymous);
-        let true_body = self.infer_statement(context, true_body)?;
-        self.scope.leave(&Tag::Anonymous);
+        let true_body = {
+            let _true_scope = self.scope.enter(Tag::Anonymous);
+            self.infer_statement(context, true_body)?
+        };
         let false_body = match false_body {
             Some(false_body) => {
-                self.scope.enter(Tag::Anonymous);
-                let false_body = self.infer_statement(context, false_body)?;
-                self.scope.leave(&Tag::Anonymous);
-                Some(false_body)
+                let _false_scope = self.scope.enter(Tag::Anonymous);
+                Some(self.infer_statement(context, false_body)?)
             }
             None => None,
         };
@@ -322,9 +321,8 @@ impl TypeInferrer {
         if *condition_type != Type::Bool {
             return Err(CompileError::ConditionNeedBool);
         }
-        self.scope.enter(Tag::Named("while"));
+        let _while_scope = self.scope.enter(Tag::Named("while"));
         let body = self.infer_statement(context, body)?;
-        self.scope.leave(&Tag::Named("while"));
         Ok(Statement::While(WhileDetail(condition, body)))
     }
 
@@ -350,7 +348,7 @@ impl TypeInferrer {
         if self.scope.is_global() {
             self.scope.declare(identifier.clone(), reference)?;
         } else {
-            self.scope.overwrite(identifier.clone(), reference)?;
+            self.scope.overwrite(identifier.clone(), reference);
         }
         Ok(Statement::Let(LetDetail(
             Variable(identifier.clone(), lvalue_type, *mutability),
@@ -376,7 +374,7 @@ impl TypeInferrer {
             parameters,
             function_type,
         } = prototype.as_ref();
-        self.scope.enter(Tag::Function(identifier.clone()));
+        let _function_scope = self.scope.enter(Tag::Function(identifier.clone()));
         let Type::Function {
             return_type,
             parameter_types,
@@ -393,7 +391,6 @@ impl TypeInferrer {
                 self.scope.declare(identifier.clone(), reference)
             })?;
         let body = self.infer_statement(context, body)?;
-        self.scope.leave(&Tag::Function(identifier.clone()));
         Ok(Statement::Define(DefineDetail {
             prototype: FunctionPrototype {
                 identifier: identifier.clone(),
@@ -414,12 +411,11 @@ impl TypeInferrer {
         let result = match statement.as_ref() {
             Statement::Empty => Statement::Empty,
             Statement::Block(statements) => {
-                self.scope.enter(Tag::Anonymous);
+                let _block_scope = self.scope.enter(Tag::Anonymous);
                 let statements = statements
                     .iter()
                     .map(|statement| self.infer_statement(context, statement))
                     .collect::<Result<Rc<_>, _>>()?;
-                self.scope.leave(&Tag::Anonymous);
                 Statement::Block(statements)
             }
             Statement::Return(return_value) => Statement::Return(self.infer_return_statement(return_value.clone())?),
@@ -566,7 +562,7 @@ impl TypeInferrer {
         };
         self.init_unary_operator_type_map();
         self.init_binary_operator_type_map();
-        self.scope.enter(Tag::Global);
+        let _global_scope = self.scope.enter(Tag::Global);
         self.pre_scan_global_items(&document, context, id)?;
         let statements = document
             .statements
@@ -574,7 +570,6 @@ impl TypeInferrer {
             .map(|statement| self.infer_statement(context, statement))
             .collect::<Result<Rc<_>, _>>()?;
         context.document_map.insert(id, Document { statements });
-        self.scope.leave(&Tag::Global);
         Ok(())
     }
 }

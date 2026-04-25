@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::fmt::{self};
 use std::rc::Rc;
 
-use crate::sys_error;
 use crate::util::common::Array;
 
 use super::IrId;
@@ -11,7 +10,6 @@ use super::memory::Memory;
 
 #[derive(Clone)]
 pub enum Value {
-    Void,
     Register(IrId),
     ImmediateI32(i32),
     ImmediateI8(i8),
@@ -26,12 +24,7 @@ pub enum Value {
 impl Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Void => {
-                sys_error!("void value should never be formatted")
-            }
-            Value::Register(id) | Value::Parameter(id) => {
-                write!(f, "%{id}")
-            }
+            Value::Register(id) | Value::Parameter(id) => write!(f, "%{id}"),
             Value::ImmediateI32(value) => write!(f, "{value}"),
             Value::ImmediateI8(value) => write!(f, "{value}"),
             Value::ImmediateBool(value) => {

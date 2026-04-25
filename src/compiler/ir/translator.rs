@@ -6,6 +6,7 @@ use crate::CompileResult;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
+use crate::compiler::scope::ScopeGuard;
 use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::Document;
 use crate::compiler::syntax::ast::crumb::Field;
@@ -53,6 +54,7 @@ use super::instruction::value::Value;
 pub struct Translator {
     document_path: Rc<DocumentPath>,
     scope: IrScope,
+    global_scope_guard: Option<ScopeGuard<IrReference>>,
 }
 
 enum DeclType {
@@ -71,6 +73,7 @@ impl Translator {
         Translator {
             document_path,
             scope: IrScope::new(),
+            global_scope_guard: None,
         }
     }
 
@@ -97,7 +100,7 @@ impl Translator {
                 let memory = Memory::Stack(format!("v{id}.{symbol}")).into();
                 let value = Rc::new(Value::Pointer(memory));
                 self.scope
-                    .overwrite(symbol, IrReference::Binding((value.clone(), data_type)))?;
+                    .overwrite(symbol, IrReference::Binding((value.clone(), data_type)));
                 value
             }
             DeclType::Global(symbol, data_type) => {
@@ -128,12 +131,11 @@ impl Translator {
         context: &Context,
         statements: &[Rc<Statement>],
     ) -> CompileResult<Rc<Instruction>> {
-        self.scope.enter(Tag::Named("block"));
+        let _block_scope = self.scope.enter(Tag::Named("block"));
         let instructions = statements
             .iter()
             .map(|statement| self.translate_statement(context, statement))
             .collect::<Result<Rc<_>, _>>()?;
-        self.scope.leave(&Tag::Named("block"));
         Ok(Instruction::Batch(instructions).into())
     }
 
@@ -143,7 +145,7 @@ impl Translator {
         expression_type: Rc<Type>,
         left: &Rc<Expression>,
         right: &Rc<Expression>,
-    ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+    ) -> CompileResult<(Rc<Instruction>, Option<Rc<Value>>)> {
         let operator = match operator {
             Binary::Add => IrBinaryOpcode::Add,
             Binary::Subtract => IrBinaryOpcode::Subtract,
@@ -165,8 +167,8 @@ impl Translator {
             }
         };
 
-        let (left_instruction, left) = self.translate_expression(left)?;
-        let (right_instruction, right) = self.translate_expression(right)?;
+        let (left_instruction, left) = self.translate_value_expression(left)?;
+        let (right_instruction, right) = self.translate_value_expression(right)?;
         let result = self.declare(DeclType::Anonymous)?;
 
         let data_type = IrType::from(expression_type).into();
@@ -179,13 +181,13 @@ impl Translator {
             right,
         };
         let instructions = [left_instruction, right_instruction, operation_instruction.into()];
-        Ok((Instruction::Batch(instructions.into()).into(), result))
+        Ok((Instruction::Batch(instructions.into()).into(), Some(result)))
     }
 
     fn translate_lvalue(&mut self, lvalue: &Rc<LValue>) -> CompileResult<(Rc<Instruction>, Rc<Value>, Rc<IrType>)> {
         match lvalue.as_ref() {
             LValue::Id(identifier) => {
-                let IrReference::Binding((value, ir_type)) = self.scope.lookup(identifier)?.unwrap() else {
+                let IrReference::Binding((value, ir_type)) = self.scope.lookup(identifier).unwrap() else {
                     sys_error!("should be inspected in type checking.");
                 };
                 Ok((Instruction::NoOperation.into(), value, ir_type))
@@ -220,9 +222,9 @@ impl Translator {
         lvalue_type: Rc<Type>,
         lvalue_expression: &Rc<Expression>,
         expression: &Rc<Expression>,
-    ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+    ) -> CompileResult<(Rc<Instruction>, Option<Rc<Value>>)> {
         let (lvalue_instruction, lvalue) = self.translate_lvalue_expression(lvalue_expression.clone())?;
-        let (expression_instruction, expression) = self.translate_expression(expression)?;
+        let (expression_instruction, expression) = self.translate_value_expression(expression)?;
 
         let assign_instruction = Instruction::Store {
             data_type: IrType::from(lvalue_type).into(),
@@ -230,7 +232,7 @@ impl Translator {
             to: lvalue,
         };
         let instructions = [lvalue_instruction, expression_instruction, assign_instruction.into()];
-        Ok((Instruction::Batch(instructions.into()).into(), Value::Void.into()))
+        Ok((Instruction::Batch(instructions.into()).into(), None))
     }
 
     fn translate_unary_expression(
@@ -239,7 +241,7 @@ impl Translator {
         sub_type: Rc<Type>,
         expression: &Rc<Expression>,
     ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
-        let (expression_instruction, expression_value) = self.translate_expression(expression)?;
+        let (expression_instruction, expression_value) = self.translate_value_expression(expression)?;
 
         let result = self.declare(DeclType::Anonymous)?;
         let data_type = Rc::new(IrType::from(sub_type));
@@ -278,9 +280,8 @@ impl Translator {
         &mut self,
         function_name: &Rc<String>,
         arguments: &Array<Expression>,
-    ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
-        let receiver = self.declare(DeclType::Anonymous)?;
-        let Some(IrReference::Binding((function_id, function_type))) = self.scope.lookup(function_name)? else {
+    ) -> CompileResult<(Rc<Instruction>, Option<Rc<Value>>)> {
+        let Some(IrReference::Binding((function_id, function_type))) = self.scope.lookup(function_name) else {
             sys_error!("undeclared identifier.");
         };
         let IrType::Function {
@@ -290,18 +291,19 @@ impl Translator {
         else {
             sys_error!("need a function type here.");
         };
+        let receiver = match return_type.as_ref() {
+            IrType::Void => None,
+            _ => Some(self.declare(DeclType::Anonymous)?),
+        };
         let (mut instructions, arguments) = arguments
             .iter()
-            .map(|argument| self.translate_expression(argument))
+            .map(|argument| self.translate_value_expression(argument))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .unzip::<_, _, Vec<_>, Vec<_>>();
         let arguments = arguments.into();
         let call_instruction = Instruction::Call {
-            receiver: match return_type.as_ref() {
-                IrType::Void => None,
-                _ => Some(receiver.clone()),
-            },
+            receiver: receiver.clone(),
             function: IrFunctionPrototype {
                 function_type,
                 id: function_id,
@@ -318,7 +320,7 @@ impl Translator {
         from_type: &Rc<Type>,
         to_type: &Rc<Type>,
     ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
-        let (instruction, from_value) = self.translate_expression(expression)?;
+        let (instruction, from_value) = self.translate_value_expression(expression)?;
         match (from_type.as_ref(), to_type.as_ref()) {
             (Type::Int(from_width), Type::Int(to_width)) => match from_width.cmp(to_width) {
                 Ordering::Equal => Ok((instruction, from_value)),
@@ -361,14 +363,17 @@ impl Translator {
         }
     }
 
-    fn translate_expression(&mut self, expression: &Rc<Expression>) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+    fn translate_expression(
+        &mut self,
+        expression: &Rc<Expression>,
+    ) -> CompileResult<(Rc<Instruction>, Option<Rc<Value>>)> {
         match expression.as_ref() {
             Expression::Identifier(identifier) => {
-                let Some(IrReference::Binding((value, data_type))) = self.scope.lookup(identifier)? else {
+                let Some(IrReference::Binding((value, data_type))) = self.scope.lookup(identifier) else {
                     sys_error!("should be inspected in type checking.");
                 };
                 match value.as_ref() {
-                    Value::Register(_) | Value::Parameter(_) => Ok((Instruction::NoOperation.into(), value)),
+                    Value::Register(_) | Value::Parameter(_) => Ok((Instruction::NoOperation.into(), Some(value))),
                     Value::Pointer(_) => {
                         let result = self.declare(DeclType::Anonymous)?;
                         let instruction = Instruction::Load {
@@ -376,80 +381,43 @@ impl Translator {
                             from: value,
                             to: result.clone(),
                         };
-                        Ok((instruction.into(), result))
+                        Ok((instruction.into(), Some(result)))
                     }
                     _ => sys_error!("identifier cannot refer to this IR value kind"),
                 }
             }
-            Expression::IntLiteral(literal) => {
-                Ok((Instruction::NoOperation.into(), Value::ImmediateI32(*literal).into()))
-            }
+            Expression::IntLiteral(literal) => Ok((
+                Instruction::NoOperation.into(),
+                Some(Value::ImmediateI32(*literal).into()),
+            )),
             Expression::CharLiteral(literal) => Ok((
                 Instruction::NoOperation.into(),
-                Value::ImmediateI8(*literal as i8).into(),
+                Some(Value::ImmediateI8(*literal as i8).into()),
             )),
             Expression::FloatLiteral(_) => sys_error!("float literal should be rejected before ir translation"),
-            Expression::BoolLiteral(literal) => {
-                Ok((Instruction::NoOperation.into(), Value::ImmediateBool(*literal).into()))
-            }
+            Expression::BoolLiteral(literal) => Ok((
+                Instruction::NoOperation.into(),
+                Some(Value::ImmediateBool(*literal).into()),
+            )),
             Expression::Unary(operator, sub_type, expression) => {
-                self.translate_unary_expression(*operator, sub_type.clone(), expression)
+                let (instruction, value) = self.translate_unary_expression(*operator, sub_type.clone(), expression)?;
+                Ok((instruction, Some(value)))
             }
             Expression::Binary(operator, child_type, left, right) => {
                 self.translate_binary_expression(*operator, child_type.clone(), left, right)
             }
             Expression::Call(function_name, arguments) => self.translate_call_expression(function_name, arguments),
             Expression::Cast(expression, from_type, to_type) => {
-                self.translate_cast_expression(expression, from_type, to_type)
+                let (instruction, value) = self.translate_cast_expression(expression, from_type, to_type)?;
+                Ok((instruction, Some(value)))
             }
             Expression::StructSpawn(name, fields) => {
-                let (field_instructions, field_values) = fields
-                    .iter()
-                    .map(Rc::as_ref)
-                    .map(|FieldInit(_, expression)| expression)
-                    .map(|expression| self.translate_expression(expression))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
-                let field_instructions: Array<_> = field_instructions.into();
-                let field_values: Array<_> = field_values.into();
-                let IrReference::StructDef(id, _, fields) = self.scope.lookup(name)?.unwrap() else {
-                    sys_error!("should be inspected in type checking.");
-                };
-                let ir_type = IrType::Struct {
-                    id,
-                    name: name.clone(),
-                    fields: fields.clone(),
-                };
-                let ir_type = Rc::new(ir_type);
-                let pointer = self.declare(DeclType::AnonymousLocal)?;
-                let fields = field_values
-                    .iter()
-                    .zip(fields.iter().map(Rc::as_ref).map(|IrField(_, field_type)| field_type))
-                    .map(|(value, ty)| (value.clone(), ty.clone()))
-                    .map(Rc::new)
-                    .collect::<Array<_>>();
-                let result = self.declare(DeclType::Anonymous)?;
-                let instructions = [
-                    Instruction::Batch(field_instructions),
-                    Instruction::Allocate((pointer.clone(), ir_type.clone())),
-                    Instruction::Store {
-                        data_type: ir_type.clone(),
-                        from: Value::ImmediateStruct(fields).into(),
-                        to: pointer.clone(),
-                    },
-                    Instruction::Load {
-                        data_type: ir_type.clone(),
-                        from: pointer.clone(),
-                        to: result.clone(),
-                    },
-                ];
-                let instructions = instructions.into_iter().map(Rc::new).collect();
-                Ok((Instruction::Batch(instructions).into(), result))
+                let (instruction, value) = self.translate_struct_spawn_expression(name, fields)?;
+                Ok((instruction, Some(value)))
             }
             Expression::Access(expression, object_type, field) => {
                 let object_type = Rc::new(IrType::from(object_type.as_ref()));
-                let (object_instruction, object_value) = self.translate_expression(expression)?;
+                let (object_instruction, object_value) = self.translate_value_expression(expression)?;
                 let (index, _) = find_field(&object_type, field);
                 let result = self.declare(DeclType::Anonymous)?;
                 let extract_value = Instruction::ExtractValue {
@@ -459,9 +427,70 @@ impl Translator {
                     index,
                 };
                 let instructions = [object_instruction, extract_value.into()];
-                Ok((Instruction::Batch(instructions.into()).into(), result))
+                Ok((Instruction::Batch(instructions.into()).into(), Some(result)))
             }
         }
+    }
+
+    fn translate_value_expression(
+        &mut self,
+        expression: &Rc<Expression>,
+    ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+        let (instruction, value) = self.translate_expression(expression)?;
+        let Some(value) = value else {
+            sys_error!("expression in value position produced void");
+        };
+        Ok((instruction, value))
+    }
+
+    fn translate_struct_spawn_expression(
+        &mut self,
+        name: &Rc<Identifier>,
+        fields: &Array<FieldInit>,
+    ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+        let (field_instructions, field_values) = fields
+            .iter()
+            .map(Rc::as_ref)
+            .map(|FieldInit(_, expression)| expression)
+            .map(|expression| self.translate_value_expression(expression))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        let field_instructions: Array<_> = field_instructions.into();
+        let field_values: Array<_> = field_values.into();
+        let IrReference::StructDef(id, _, fields) = self.scope.lookup(name).unwrap() else {
+            sys_error!("should be inspected in type checking.");
+        };
+        let ir_type = IrType::Struct {
+            id,
+            name: name.clone(),
+            fields: fields.clone(),
+        };
+        let ir_type = Rc::new(ir_type);
+        let pointer = self.declare(DeclType::AnonymousLocal)?;
+        let fields = field_values
+            .iter()
+            .zip(fields.iter().map(Rc::as_ref).map(|IrField(_, field_type)| field_type))
+            .map(|(value, ty)| (value.clone(), ty.clone()))
+            .map(Rc::new)
+            .collect::<Array<_>>();
+        let result = self.declare(DeclType::Anonymous)?;
+        let instructions = [
+            Instruction::Batch(field_instructions),
+            Instruction::Allocate((pointer.clone(), ir_type.clone())),
+            Instruction::Store {
+                data_type: ir_type.clone(),
+                from: Value::ImmediateStruct(fields).into(),
+                to: pointer.clone(),
+            },
+            Instruction::Load {
+                data_type: ir_type.clone(),
+                from: pointer.clone(),
+                to: result.clone(),
+            },
+        ];
+        let instructions = instructions.into_iter().map(Rc::new).collect();
+        Ok((Instruction::Batch(instructions).into(), result))
     }
 
     fn translate_expression_statement(&mut self, expression: &Rc<Expression>) -> CompileResult<Rc<Instruction>> {
@@ -507,7 +536,7 @@ impl Translator {
 
         let jump_to_start = Instruction::Jump(if_start.clone());
         let start_label = Instruction::Label(if_start);
-        let (condition_instructions, condition) = self.translate_expression(condition)?;
+        let (condition_instructions, condition) = self.translate_value_expression(condition)?;
         let conditional_jump = Instruction::JumpIf {
             condition,
             when_true: when_true.clone(),
@@ -571,7 +600,7 @@ impl Translator {
 
         let jump_to_check_point = Instruction::Jump(check_point.clone());
         let check_point_label = Instruction::Label(check_point.clone());
-        let (condition_instructions, condition) = self.translate_expression(condition)?;
+        let (condition_instructions, condition) = self.translate_value_expression(condition)?;
         let conditional_jump = Instruction::JumpIf {
             condition,
             when_true: loop_start.clone(),
@@ -600,9 +629,9 @@ impl Translator {
         LetDetail(Variable(identifier, var_type, _), expression): &LetDetail,
     ) -> CompileResult<Rc<Instruction>> {
         let data_type = IrType::from(var_type.as_ref()).into();
-        let (expression_instructions, expression) = self.translate_expression(expression)?;
+        let (expression_instructions, expression) = self.translate_value_expression(expression)?;
         let assign_instruction = if self.scope.is_global() {
-            let Some(IrReference::Binding((lvalue, _))) = self.scope.lookup(identifier)? else {
+            let Some(IrReference::Binding((lvalue, _))) = self.scope.lookup(identifier) else {
                 sys_error!("must find it.");
             };
             Instruction::Global {
@@ -633,9 +662,9 @@ impl Translator {
         let Some(return_value) = return_value else {
             return Ok(Instruction::ReturnVoid.into());
         };
-        let (expression_instructions, expression) = self.translate_expression(&return_value)?;
+        let (expression_instructions, expression) = self.translate_value_expression(&return_value)?;
         let function_name = self.scope.current_function();
-        let Some(IrReference::Binding((_, function_type))) = self.scope.lookup(&function_name)? else {
+        let Some(IrReference::Binding((_, function_type))) = self.scope.lookup(&function_name) else {
             sys_error!("must be a function type");
         };
         let IrType::Function {
@@ -672,7 +701,7 @@ impl Translator {
             function_type: _,
         } = prototype.as_ref();
 
-        let Some(IrReference::Binding((function, function_type))) = self.scope.lookup(identifier)? else {
+        let Some(IrReference::Binding((function, function_type))) = self.scope.lookup(identifier) else {
             sys_error!("must pre scanned it.");
         };
         if *builtin {
@@ -688,7 +717,7 @@ impl Translator {
         else {
             sys_error!("must be a function type.");
         };
-        self.scope.enter(Tag::Function(identifier.clone()));
+        let _function_scope = self.scope.enter(Tag::Function(identifier.clone()));
         let parameters = parameters
             .iter()
             .map(Rc::as_ref)
@@ -706,7 +735,6 @@ impl Translator {
             },
         ];
         let body = Instruction::Batch(body_instructions.into()).into();
-        self.scope.leave(&Tag::Function(identifier.clone()));
 
         let definition = Instruction::Definition(
             IrFunctionPrototype {
@@ -779,7 +807,10 @@ impl Translator {
     /// # Errors
     /// # Panics
     pub fn pre_scan_global(&mut self, context: &mut Context, document_id: DocumentId) -> CompileResult<()> {
-        self.scope.enter(Tag::Global);
+        if self.global_scope_guard.is_some() {
+            sys_error!("pre_scan_global called twice on the same Translator");
+        }
+        self.global_scope_guard = Some(self.scope.enter(Tag::Global));
         let document = context.document_map.get(&document_id).unwrap();
         let mut ir_model_map = HashMap::new();
         document
@@ -855,7 +886,9 @@ impl Translator {
         };
         let instruction = self.translate_document(context, document)?;
         context.instruction.insert(document_id, instruction);
-        self.scope.leave(&Tag::Global);
+        if self.global_scope_guard.take().is_none() {
+            sys_error!("translate called without a preceding pre_scan_global");
+        }
         Ok(())
     }
 }
