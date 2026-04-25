@@ -15,7 +15,7 @@ use super::syntax::ast::ty::Type;
 #[macro_export]
 macro_rules! sys_error {
     ($($arg:tt)*) => {
-        panic!($($arg)*)
+        panic!("编译器内部错误: {}", format!($($arg)*))
     };
 }
 
