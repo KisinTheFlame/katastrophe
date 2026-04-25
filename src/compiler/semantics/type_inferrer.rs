@@ -575,6 +575,37 @@ impl TypeInferrer {
             .insert((Unary::LogicalNot, Type::Bool.into()), Type::Bool.into());
     }
 
+    /// 解析所有顶层全局 `let` 的类型并回写 `context.reference_map`。
+    /// 必须先于 `infer` 在所有文档上跑完，让跨文档 `using` 能看到对方的全局类型。
+    /// parser 阶段未标注类型的全局 let 在 `reference_map` 里只占一个 `Binding(None)`，
+    /// 这里把它覆盖成 `Binding(Some(t))`。
+    ///
+    /// # Errors
+    pub fn resolve_global_let_types(&self, context: &mut Context, id: DocumentId) -> CompileResult<()> {
+        let Some(document) = context.document_map.get(&id) else {
+            sys_error!("document must exist");
+        };
+        let resolved = document
+            .statements
+            .iter()
+            .filter_map(|statement| match statement.as_ref() {
+                Statement::Let(LetDetail(Variable(name, lvalue_type, mutability), expression)) => {
+                    let ty = match lvalue_type {
+                        Some(t) => Some(t.clone()),
+                        None => derive_literal_type(expression),
+                    };
+                    ty.map(|ty| (name.clone(), ty, *mutability))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let entry = context.reference_map.entry(id).or_default();
+        for (name, ty, mutability) in resolved {
+            entry.insert(name, Reference::Binding(Some(ty), mutability).into());
+        }
+        Ok(())
+    }
+
     /// # Errors
     pub fn infer(&mut self, context: &mut Context, id: DocumentId) -> CompileResult<()> {
         let Some(document) = context.document_map.remove(&id) else {
@@ -591,6 +622,18 @@ impl TypeInferrer {
             .collect::<Result<Rc<_>, _>>()?;
         context.document_map.insert(id, Document { statements });
         Ok(())
+    }
+}
+
+/// 从全局 `let` 的初始化表达式推断类型。仅覆盖语言允许作为全局初始化的字面量；
+/// 非字面量返回 `None`，由后续完整类型推断在 `infer_let_statement` 报
+/// `GlobalInitializerNotConstant`。
+fn derive_literal_type(expression: &Expression) -> Option<Rc<Type>> {
+    match expression {
+        Expression::IntLiteral(_) => Some(Type::Int(BitWidth::Bit32).into()),
+        Expression::CharLiteral(_) => Some(Type::Int(BitWidth::Bit8).into()),
+        Expression::BoolLiteral(_) => Some(Type::Bool.into()),
+        _ => None,
     }
 }
 

@@ -1,0 +1,8 @@
+using std::io::putchar;
+using std::test_inferred_global::nine;
+
+def main() -> i32 {
+    putchar('0' + nine as i8);
+    putchar('\n');
+    return 0;
+}

@@ -35,6 +35,8 @@ pub fn syntax_analyze(context: &mut Context, code: &str) -> CompileResult<u32> {
 /// # Errors
 pub fn type_infer(context: &mut Context, ids: &Arr<u32>) -> CompileResult<()> {
     let mut type_inferrer = TypeInferrer::new();
+    ids.iter()
+        .try_for_each(|id| type_inferrer.resolve_global_let_types(context, *id))?;
     ids.iter().try_for_each(|id| type_inferrer.infer(context, *id))?;
     Ok(())
 }

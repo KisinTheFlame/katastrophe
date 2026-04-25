@@ -31,3 +31,8 @@ fn test_struct() {
 fn test_shadowing() {
     test_with("shadowing");
 }
+
+#[test]
+fn test_inferred_global() {
+    test_with("test_inferred_global");
+}
