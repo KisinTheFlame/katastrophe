@@ -97,7 +97,7 @@ impl Translator {
                 let memory = Memory::Stack(format!("v{id}.{symbol}")).into();
                 let value = Rc::new(Value::Pointer(memory));
                 self.scope
-                    .declare(symbol, IrReference::Binding((value.clone(), data_type)))?;
+                    .overwrite(symbol, IrReference::Binding((value.clone(), data_type)))?;
                 value
             }
             DeclType::Global(symbol, data_type) => {

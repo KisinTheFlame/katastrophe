@@ -347,7 +347,11 @@ impl TypeInferrer {
         if self.scope.is_global() && !Self::is_supported_global_initializer(expression.as_ref()) {
             return Err(CompileError::GlobalInitializerNotConstant);
         }
-        self.scope.declare(identifier.clone(), reference)?;
+        if self.scope.is_global() {
+            self.scope.declare(identifier.clone(), reference)?;
+        } else {
+            self.scope.overwrite(identifier.clone(), reference)?;
+        }
         Ok(Statement::Let(LetDetail(
             Variable(identifier.clone(), lvalue_type, *mutability),
             expression,

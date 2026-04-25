@@ -26,3 +26,8 @@ fn test_i8() {
 fn test_struct() {
     test_with("struct");
 }
+
+#[test]
+fn test_shadowing() {
+    test_with("shadowing");
+}

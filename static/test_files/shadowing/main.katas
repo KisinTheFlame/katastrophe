@@ -1,0 +1,23 @@
+using std::io::putchar;
+
+def main() -> i32 {
+    let x = 'a';
+    putchar(x);
+
+    let x = 'b';
+    putchar(x);
+
+    {
+        let x = 'c';
+        putchar(x);
+    }
+
+    putchar(x);
+
+    let mut x = 'd';
+    x = 'e';
+    putchar(x);
+    putchar('\n');
+
+    return 0;
+}

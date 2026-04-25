@@ -102,7 +102,11 @@ impl LValueChecker {
                 Ok(())
             }
             Statement::Let(LetDetail(Variable(identifier, _, mutability), _)) => {
-                self.scope.declare(identifier.clone(), *mutability)?;
+                if self.scope.is_global() {
+                    self.scope.declare(identifier.clone(), *mutability)?;
+                } else {
+                    self.scope.overwrite(identifier.clone(), *mutability)?;
+                }
                 Ok(())
             }
             Statement::Expression(expression) => match expression.as_ref() {
