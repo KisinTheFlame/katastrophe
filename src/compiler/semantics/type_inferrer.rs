@@ -34,8 +34,6 @@ use crate::util::common::Array;
 type ReferenceScope = Scope<Rc<Reference>>;
 
 pub struct TypeInferrer {
-    unary_operation_type_map: HashMap<(Unary, Rc<Type>), Rc<Type>>,
-    binary_operation_type_map: HashMap<(Binary, Rc<Type>, Rc<Type>), Rc<Type>>,
     scope: ReferenceScope,
 }
 
@@ -43,30 +41,8 @@ impl TypeInferrer {
     #[must_use]
     pub fn new() -> TypeInferrer {
         TypeInferrer {
-            unary_operation_type_map: HashMap::new(),
-            binary_operation_type_map: HashMap::new(),
             scope: ReferenceScope::new(),
         }
-    }
-
-    fn infer_binary_operation_type(&self, index: &(Binary, Rc<Type>, Rc<Type>)) -> CompileResult<Rc<Type>> {
-        let (operator, left_type, right_type) = index;
-        self.binary_operation_type_map
-            .get(index)
-            .cloned()
-            .ok_or(CompileError::UndefinedBinaryExpression(
-                *operator,
-                left_type.clone(),
-                right_type.clone(),
-            ))
-    }
-
-    fn infer_unary_operation_type(&self, index: &(Unary, Rc<Type>)) -> CompileResult<Rc<Type>> {
-        let (operator, ty) = index;
-        self.unary_operation_type_map
-            .get(index)
-            .cloned()
-            .ok_or(CompileError::UndefinedUnaryExpression(*operator, ty.clone()))
     }
 
     fn infer_assignment(&self, lvalue: &Rc<Expression>, expression: &Rc<Expression>) -> CompileResult<Rc<Expression>> {
@@ -176,11 +152,12 @@ impl TypeInferrer {
             Expression::FloatLiteral(_) => return Err(CompileError::UnsupportedFeature("float literal")),
             Expression::BoolLiteral(value) => (Expression::BoolLiteral(*value).into(), Type::Bool.into()),
             Expression::Unary(operator, _, child) => {
-                let (child, result_type) = self.infer_expression(child)?;
-                let child_type = self.infer_unary_operation_type(&(*operator, result_type.clone()))?;
+                let (child, operand_type) = self.infer_expression(child)?;
+                let result_type = unary_result_type(*operator, &operand_type)
+                    .ok_or_else(|| CompileError::UndefinedUnaryExpression(*operator, operand_type.clone()))?;
                 (
-                    Expression::Unary(*operator, Some(child_type), child).into(),
-                    result_type,
+                    Expression::Unary(*operator, Some(result_type), child).into(),
+                    operand_type,
                 )
             }
             Expression::Binary(operator, _, left, right) => {
@@ -190,10 +167,11 @@ impl TypeInferrer {
                 } else {
                     let (left, left_type) = self.infer_expression(left)?;
                     let (right, right_type) = self.infer_expression(right)?;
-                    let child_type = left_type.clone();
-                    let result_type = self.infer_binary_operation_type(&(*operator, left_type, right_type))?;
+                    let result_type = binary_result_type(*operator, &left_type, &right_type).ok_or_else(|| {
+                        CompileError::UndefinedBinaryExpression(*operator, left_type.clone(), right_type.clone())
+                    })?;
                     (
-                        Expression::Binary(*operator, Some(child_type), left, right).into(),
+                        Expression::Binary(*operator, Some(left_type), left, right).into(),
                         result_type,
                     )
                 }
@@ -513,68 +491,6 @@ impl TypeInferrer {
             })
     }
 
-    fn init_binary_operator_type_map(&mut self) {
-        for operator in [
-            Binary::Add,
-            Binary::Subtract,
-            Binary::Multiply,
-            Binary::Divide,
-            Binary::BitAnd,
-            Binary::BitOr,
-        ] {
-            for bit_width in BitWidth::all() {
-                let t = Rc::new(Type::Int(*bit_width));
-                self.binary_operation_type_map
-                    .insert((operator, t.clone(), t.clone()), t);
-            }
-        }
-
-        for operator in [Binary::LeftShift, Binary::RightShift] {
-            for w1 in BitWidth::all() {
-                for w2 in BitWidth::all() {
-                    let left_type = Rc::new(Type::Int(*w1));
-                    let right_type = Type::Int(*w2).into();
-                    self.binary_operation_type_map
-                        .insert((operator, left_type.clone(), right_type), left_type);
-                }
-            }
-        }
-
-        for operator in [
-            Binary::Equal,
-            Binary::NotEqual,
-            Binary::LessThan,
-            Binary::LessThanEqual,
-            Binary::GreaterThan,
-            Binary::GreaterThanEqual,
-        ] {
-            let bool_type = Rc::new(Type::Bool);
-            for bit_width in BitWidth::all() {
-                let t = Rc::new(Type::Int(*bit_width));
-                self.binary_operation_type_map
-                    .insert((operator, t.clone(), t.clone()), bool_type.clone());
-            }
-        }
-
-        for operator in [Binary::LogicalAnd, Binary::LogicalOr] {
-            self.binary_operation_type_map
-                .insert((operator, Type::Bool.into(), Type::Bool.into()), Type::Bool.into());
-        }
-    }
-
-    fn init_unary_operator_type_map(&mut self) {
-        for bit_width in BitWidth::all() {
-            let t = Rc::new(Type::Int(*bit_width));
-            self.unary_operation_type_map
-                .insert((Unary::BitNot, t.clone()), t.clone());
-            self.unary_operation_type_map
-                .insert((Unary::Negative, t.clone()), t.clone());
-        }
-
-        self.unary_operation_type_map
-            .insert((Unary::LogicalNot, Type::Bool.into()), Type::Bool.into());
-    }
-
     /// 解析所有顶层全局 `let` 的类型并回写 `context.reference_map`。
     /// 必须先于 `infer` 在所有文档上跑完，让跨文档 `using` 能看到对方的全局类型。
     /// parser 阶段未标注类型的全局 let 在 `reference_map` 里只占一个 `Binding(None)`，
@@ -611,8 +527,6 @@ impl TypeInferrer {
         let Some(document) = context.document_map.remove(&id) else {
             sys_error!("document must exist");
         };
-        self.init_unary_operator_type_map();
-        self.init_binary_operator_type_map();
         let _global_scope = self.scope.enter(Tag::Global);
         self.pre_scan_global_items(&document, context, id)?;
         let statements = document
@@ -637,8 +551,140 @@ fn derive_literal_type(expression: &Expression) -> Option<Rc<Type>> {
     }
 }
 
+/// 一元操作符的结果类型规则。返回 `None` 表示不接受这种操作数类型，
+/// 调用方会包成 `CompileError::UndefinedUnaryExpression`。
+fn unary_result_type(operator: Unary, operand_type: &Type) -> Option<Rc<Type>> {
+    match operator {
+        Unary::LogicalNot => match operand_type {
+            Type::Bool => Some(Type::Bool.into()),
+            _ => None,
+        },
+        Unary::BitNot | Unary::Negative => match operand_type {
+            Type::Int(width) => Some(Type::Int(*width).into()),
+            _ => None,
+        },
+    }
+}
+
+/// 二元操作符的结果类型规则（不含 Assign 与 As，它们走单独路径）。返回 `None`
+/// 表示不接受这种操作数组合，调用方会包成 `CompileError::UndefinedBinaryExpression`。
+fn binary_result_type(operator: Binary, left: &Type, right: &Type) -> Option<Rc<Type>> {
+    match operator {
+        Binary::Add | Binary::Subtract | Binary::Multiply | Binary::Divide | Binary::BitAnd | Binary::BitOr => {
+            match (left, right) {
+                (Type::Int(w1), Type::Int(w2)) if w1 == w2 => Some(Type::Int(*w1).into()),
+                _ => None,
+            }
+        }
+        Binary::LeftShift | Binary::RightShift => match (left, right) {
+            (Type::Int(w), Type::Int(_)) => Some(Type::Int(*w).into()),
+            _ => None,
+        },
+        Binary::Equal
+        | Binary::NotEqual
+        | Binary::LessThan
+        | Binary::LessThanEqual
+        | Binary::GreaterThan
+        | Binary::GreaterThanEqual => match (left, right) {
+            (Type::Int(w1), Type::Int(w2)) if w1 == w2 => Some(Type::Bool.into()),
+            _ => None,
+        },
+        Binary::LogicalAnd | Binary::LogicalOr => match (left, right) {
+            (Type::Bool, Type::Bool) => Some(Type::Bool.into()),
+            _ => None,
+        },
+        Binary::Assign | Binary::As => None,
+    }
+}
+
 impl Default for TypeInferrer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Type;
+    use super::binary_result_type;
+    use super::unary_result_type;
+    use crate::compiler::bit_width::BitWidth;
+    use crate::compiler::syntax::ast::operator::Binary;
+    use crate::compiler::syntax::ast::operator::Unary;
+
+    fn int(width: BitWidth) -> Type {
+        Type::Int(width)
+    }
+
+    #[test]
+    fn arithmetic_requires_matching_int_widths() {
+        let i32 = int(BitWidth::Bit32);
+        let i8 = int(BitWidth::Bit8);
+        assert!(matches!(
+            binary_result_type(Binary::Add, &i32, &i32).as_deref(),
+            Some(Type::Int(BitWidth::Bit32)),
+        ));
+        assert!(binary_result_type(Binary::Add, &i32, &i8).is_none());
+    }
+
+    #[test]
+    fn shift_allows_mismatched_int_widths() {
+        let i32 = int(BitWidth::Bit32);
+        let i8 = int(BitWidth::Bit8);
+        assert!(matches!(
+            binary_result_type(Binary::LeftShift, &i32, &i8).as_deref(),
+            Some(Type::Int(BitWidth::Bit32)),
+        ));
+    }
+
+    #[test]
+    fn comparison_returns_bool_for_matching_ints() {
+        let i32 = int(BitWidth::Bit32);
+        assert!(matches!(
+            binary_result_type(Binary::Equal, &i32, &i32).as_deref(),
+            Some(Type::Bool),
+        ));
+        assert!(binary_result_type(Binary::Equal, &Type::Bool, &Type::Bool).is_none());
+    }
+
+    #[test]
+    fn logical_and_or_only_accept_bool() {
+        assert!(matches!(
+            binary_result_type(Binary::LogicalAnd, &Type::Bool, &Type::Bool).as_deref(),
+            Some(Type::Bool),
+        ));
+        let i32 = int(BitWidth::Bit32);
+        assert!(binary_result_type(Binary::LogicalAnd, &i32, &i32).is_none());
+    }
+
+    #[test]
+    fn assign_and_as_are_handled_elsewhere() {
+        let i32 = int(BitWidth::Bit32);
+        assert!(binary_result_type(Binary::Assign, &i32, &i32).is_none());
+        assert!(binary_result_type(Binary::As, &i32, &i32).is_none());
+    }
+
+    #[test]
+    fn unary_negative_and_bitnot_take_ints() {
+        let i32 = int(BitWidth::Bit32);
+        assert!(matches!(
+            unary_result_type(Unary::Negative, &i32).as_deref(),
+            Some(Type::Int(BitWidth::Bit32)),
+        ));
+        assert!(matches!(
+            unary_result_type(Unary::BitNot, &i32).as_deref(),
+            Some(Type::Int(BitWidth::Bit32)),
+        ));
+        assert!(unary_result_type(Unary::Negative, &Type::Bool).is_none());
+    }
+
+    #[test]
+    fn unary_logical_not_takes_bool() {
+        assert!(matches!(
+            unary_result_type(Unary::LogicalNot, &Type::Bool).as_deref(),
+            Some(Type::Bool),
+        ));
+        let i32 = int(BitWidth::Bit32);
+        assert!(unary_result_type(Unary::LogicalNot, &i32).is_none());
     }
 }
