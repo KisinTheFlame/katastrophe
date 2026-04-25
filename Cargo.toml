@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2.33"
+include_dir = "0.7"
 indoc = "2.0.5"
 paste = "1.0.14"
 rand = "0.8.5"

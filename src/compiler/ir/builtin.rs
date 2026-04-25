@@ -1,21 +1,16 @@
-use std::fs;
 use std::rc::Rc;
 
-use crate::CompileResult;
 use crate::compiler::bit_width::BitWidth;
-use crate::compiler::err::CompileError;
+use crate::compiler::embedded;
 
 use super::instruction::Instruction;
 use super::instruction::IrFunctionPrototype;
 use super::instruction::ir_type::IrType;
 use super::instruction::value::Value;
 
-/// # Errors
-pub fn generate_libc_function() -> CompileResult<Instruction> {
-    match fs::read_to_string("static/libc_declaration.ll") {
-        Ok(code) => Ok(Instruction::BuiltinDefinition(code)),
-        Err(_) => Err(CompileError::BuiltinFileNotExist),
-    }
+#[must_use]
+pub fn generate_libc_function() -> Instruction {
+    Instruction::BuiltinDefinition(embedded::libc_declaration().to_string())
 }
 
 #[must_use]

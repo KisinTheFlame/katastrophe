@@ -1,4 +1,5 @@
 pub mod context;
+pub mod embedded;
 pub mod err;
 pub mod ir;
 pub mod lexis;

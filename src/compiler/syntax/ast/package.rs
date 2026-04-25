@@ -1,10 +1,10 @@
 use std::fmt::Display;
 use std::fmt::{self};
-use std::fs;
 use std::rc::Rc;
 
 use crate::CompileResult;
 use crate::compiler::context::Context;
+use crate::compiler::embedded;
 use crate::compiler::err::CompileError;
 use crate::compiler::ir::instruction::value::Value;
 use crate::compiler::syntax::parser::Parser;
@@ -51,38 +51,19 @@ pub fn load_package_path(context: &mut Context, path: Rc<DocumentPath>) -> Compi
 }
 
 #[must_use]
-pub fn get_builtin(path: &Rc<DocumentPath>, id: &String, value: &Value) -> Option<String> {
-    let document_path = get_package_path(path)?;
-    let file_path = format!("{document_path}/builtin/{id}.ll");
-    match fs::read_to_string(file_path) {
-        Ok(code) => Some(code.replace("{value}", value.to_string().as_str())),
-        Err(_) => None,
-    }
-}
-
-fn get_package_path(document_path: &Rc<DocumentPath>) -> Option<String> {
-    let DocumentPath(path_nodes) = document_path.as_ref();
-    let root_directory = &path_nodes[0];
-    match root_directory.as_str() {
-        "std" => Some(get_std_package_path(document_path)),
-        _ => None,
-    }
-}
-
-fn get_std_package_path(document_path: &Rc<DocumentPath>) -> String {
-    const STD_ROOT: &str = "./library";
-    let dir = document_path.to_dir();
-    format!("{STD_ROOT}/{dir}")
+pub fn get_builtin(path: &Rc<DocumentPath>, id: &str, value: &Value) -> Option<String> {
+    let template = embedded::resolve_builtin_ir(path, id)?;
+    Some(template.replace("{value}", value.to_string().as_str()))
 }
 
 fn load_package(context: &mut Context, path: Rc<DocumentPath>) -> CompileResult<()> {
-    let Some(package_path) = get_package_path(&path) else {
+    let DocumentPath(nodes) = path.as_ref();
+    if nodes.first().map(Rc::as_ref).map(String::as_str) != Some("std") {
         return Err(CompileError::UnsupportedFeature("non-std package path"));
-    };
-    let file_path = package_path + ".katas";
-    let Ok(code) = fs::read_to_string(file_path) else {
+    }
+    let Some(code) = embedded::resolve_package_source(&path) else {
         return Err(CompileError::UnknownPackage);
     };
-    Parser::new(path, &code)?.parse_document(context)?;
+    Parser::new(path, code)?.parse_document(context)?;
     Ok(())
 }

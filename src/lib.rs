@@ -115,7 +115,7 @@ pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> 
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let builtin_ir = generate_libc_function()?;
+    let builtin_ir = generate_libc_function();
     let IrReference::Binding((main_value, _)) = context
         .ir_model_map
         .get(&main_document_id)

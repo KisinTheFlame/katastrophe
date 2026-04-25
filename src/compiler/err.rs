@@ -97,7 +97,6 @@ pub enum CompileError {
     IllegalMainFunctionType,
 
     // Ir Errors
-    BuiltinFileNotExist,
     BuiltinFunctionFileNotExist(Rc<Identifier>),
 
     // Environment Errors
@@ -263,9 +262,6 @@ impl Display for CompileError {
             }
 
             // Ir Errors
-            CompileError::BuiltinFileNotExist => {
-                write!(f, "builtin file not exist.")
-            }
             CompileError::BuiltinFunctionFileNotExist(identifier) => {
                 write!(f, "builtin function {identifier} file not exist")
             }
