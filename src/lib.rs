@@ -47,6 +47,26 @@ pub fn lvalue_check(context: &Context, ids: &Arr<u32>) -> CompileResult<()> {
     Ok(())
 }
 
+/// 把上下文里所有文档的 AST 按文档 ID 升序渲染成可读文本。
+///
+/// # Panics
+#[must_use]
+pub fn dump_ast(context: &Context) -> String {
+    let mut ids = context.document_map.keys().copied().collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.iter()
+        .map(|id| {
+            let document_path = context.path_map.get(id).or_ice("missing document path during ast dump");
+            let ast = context.document_map.get(id).or_ice("missing document during ast dump");
+            formatdoc! {"
+                ----- {document_path} -----
+                {ast}
+            "}
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// # Errors
 /// # Panics
 pub fn ir_translate(context: &mut Context, ids: &Arr<u32>) -> CompileResult<()> {

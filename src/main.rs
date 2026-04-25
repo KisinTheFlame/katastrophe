@@ -1,231 +1,178 @@
-use std::env::Args;
-use std::env::{self};
-use std::fmt;
-use std::fmt::Display;
 use std::fs;
-use std::iter::Peekable;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process;
 use std::rc::Rc;
 
-use indoc::formatdoc;
+use clap::Parser;
 use katastrophe::CompileResult;
 use katastrophe::assemble;
 use katastrophe::compiler::context::Context;
 use katastrophe::compiler::err::CompileError;
-use katastrophe::compiler::err::IceUnwrap;
 use katastrophe::compiler::semantics::main_function_checker::main_function_check;
+use katastrophe::dump_ast;
 use katastrophe::ir_generate;
 use katastrophe::ir_translate;
 use katastrophe::lvalue_check;
 use katastrophe::syntax_analyze;
 use katastrophe::type_infer;
 
-enum CommandError {
-    MissingOutputFile,
+#[derive(Parser)]
+#[command(name = "katastrophe", version, about = "Katastrophe 玩具语言编译器")]
+struct Cli {
+    /// 输入源文件路径
+    input: PathBuf,
 
-    DuplicateInputDeclaration,
-    DuplicateOutputFileDeclaration,
-    DuplicateTargetDeclaration,
+    /// 输出文件路径，缺省时按 target 取默认值
+    #[arg(short, long, value_name = "PATH")]
+    output: Option<PathBuf>,
 
-    NoInputFile,
+    /// 仅输出 AST，不生成 IR / 可执行文件
+    #[arg(long, group = "target")]
+    ast: bool,
+
+    /// 仅输出 LLVM IR，不进行链接
+    #[arg(long, group = "target")]
+    ir: bool,
 }
 
-impl CommandError {
-    fn report(&self) -> ! {
-        eprintln!("error: {self}");
-        process::exit(1);
-    }
-}
-
-impl Display for CommandError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CommandError::MissingOutputFile => {
-                write!(f, "unexpected EOF after -o or --output. need a output path.")
-            }
-            CommandError::DuplicateInputDeclaration => write!(f, "duplicate input path declarations."),
-            CommandError::DuplicateOutputFileDeclaration => {
-                write!(f, "duplicate output path declarations.")
-            }
-            CommandError::DuplicateTargetDeclaration => write!(f, "duplicate target declarations."),
-            CommandError::NoInputFile => write!(f, "no input file."),
-        }
-    }
-}
-
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
     Executable,
     Ast,
     Ir,
 }
 
-struct CommandOptions {
-    target: Option<Target>,
-    input_path: Option<String>,
-    output_path: Option<String>,
+impl Target {
+    fn from_cli(cli: &Cli) -> Self {
+        if cli.ast {
+            Target::Ast
+        } else if cli.ir {
+            Target::Ir
+        } else {
+            Target::Executable
+        }
+    }
+
+    fn default_path(self) -> PathBuf {
+        PathBuf::from(match self {
+            Target::Executable => "a.out",
+            Target::Ast => "a.ast",
+            Target::Ir => "a.ll",
+        })
+    }
+
+    fn default_extension(self) -> Option<&'static str> {
+        match self {
+            Target::Executable => None,
+            Target::Ast => Some("ast"),
+            Target::Ir => Some("ll"),
+        }
+    }
 }
 
-impl CommandOptions {
-    pub fn new() -> CommandOptions {
-        CommandOptions {
-            target: None,
-            input_path: None,
-            output_path: None,
+fn resolve_output_path(target: Target, user_path: Option<PathBuf>) -> PathBuf {
+    let mut path = user_path.unwrap_or_else(|| target.default_path());
+    if path.extension().is_none() {
+        if let Some(ext) = target.default_extension() {
+            path.set_extension(ext);
         }
     }
-
-    pub fn complete_by_default(&mut self) -> Result<(), CommandError> {
-        if self.input_path.is_none() {
-            return Err(CommandError::NoInputFile);
-        }
-
-        self.target.get_or_insert(Target::Executable);
-        self.output_path.get_or_insert(String::from("a.out"));
-        Ok(())
-    }
-}
-
-struct ArgHandler {
-    args: Peekable<Args>,
-}
-
-impl ArgHandler {
-    pub fn new(args: Args) -> ArgHandler {
-        ArgHandler { args: args.peekable() }
-    }
-
-    fn next_else(&mut self, error: CommandError) -> Result<String, CommandError> {
-        self.args.next().ok_or(error)
-    }
-
-    fn parse(&mut self) -> Result<CommandOptions, CommandError> {
-        // skip self path
-        self.args.next();
-
-        let mut options = CommandOptions::new();
-
-        while self.args.peek().is_some() {
-            let arg = self.args.next().or_ice("argument iterator empty after non-empty peek");
-            match arg.as_str() {
-                "-o" | "--output" => {
-                    let output_filename = self.next_else(CommandError::MissingOutputFile)?;
-                    if options.output_path.is_some() {
-                        return Err(CommandError::DuplicateOutputFileDeclaration);
-                    }
-                    options.output_path = Some(output_filename);
-                }
-                "--ast" => {
-                    if options.target.is_some() {
-                        return Err(CommandError::DuplicateTargetDeclaration);
-                    }
-                    options.target = Some(Target::Ast);
-                }
-                "--ir" => {
-                    if options.target.is_some() {
-                        return Err(CommandError::DuplicateTargetDeclaration);
-                    }
-                    options.target = Some(Target::Ir);
-                }
-                input_filename => {
-                    if options.input_path.is_some() {
-                        return Err(CommandError::DuplicateInputDeclaration);
-                    }
-                    options.input_path = Some(input_filename.to_string());
-                }
-            }
-        }
-        Ok(options)
-    }
-
-    pub fn handle(&mut self) -> CommandOptions {
-        let mut options = match self.parse() {
-            Ok(options) => options,
-            Err(e) => e.report(),
-        };
-        match options.complete_by_default() {
-            Ok(()) => options,
-            Err(e) => e.report(),
-        }
-    }
+    path
 }
 
 fn main() {
-    if let Err(e) = execute() {
+    let cli = Cli::parse();
+    if let Err(e) = run(cli) {
         eprintln!("error: {e}");
         process::exit(1);
     }
 }
 
-fn execute() -> CompileResult<()> {
-    let args = env::args();
-    let mut arg_handler = ArgHandler::new(args);
-    let options = arg_handler.handle();
+fn run(cli: Cli) -> CompileResult<()> {
+    let target = Target::from_cli(&cli);
+    let output_path = resolve_output_path(target, cli.output);
 
-    let input_filename = options
-        .input_path
-        .or_ice("input path missing after complete_by_default");
-    let mut output_path = options
-        .output_path
-        .or_ice("output path missing after complete_by_default");
-
-    let code = fs::read_to_string(&input_filename).map_err(|error| CompileError::FileReadFailed {
-        path: input_filename,
+    let code = fs::read_to_string(&cli.input).map_err(|error| CompileError::FileReadFailed {
+        path: cli.input.to_string_lossy().into_owned(),
         error: error.to_string(),
     })?;
 
     let mut context = Context::new();
-
-    let main_document_id = syntax_analyze(&mut context, code.as_str())?;
+    let main_document_id = syntax_analyze(&mut context, &code)?;
 
     let mut ids = context.document_map.keys().copied().collect::<Vec<_>>();
     ids.sort_unstable();
     let ids = Rc::<[u32]>::from(ids);
 
     type_infer(&mut context, &ids)?;
-
     lvalue_check(&context, &ids)?;
-
     main_function_check(&context, main_document_id)?;
 
-    if let Some(Target::Ast) = options.target {
-        if !output_path.contains('.') {
-            output_path.push_str(".ast");
+    match target {
+        Target::Ast => write_text_output(&output_path, &dump_ast(&context)),
+        Target::Ir => {
+            ir_translate(&mut context, &ids)?;
+            let ir_code = ir_generate(&context, &ids, main_document_id)?;
+            write_text_output(&output_path, &ir_code)
         }
-        let output = ids
-            .iter()
-            .map(|id| {
-                let document_path = context.path_map.get(id).or_ice("missing document path during ast dump");
-                let ast = context.document_map.get(id).or_ice("missing document during ast dump");
-                formatdoc! {"
-                    ----- {document_path} -----
-                    {ast}
-                "}
-            })
-            .collect::<Rc<_>>()
-            .join("\n");
-        fs::write(&output_path, output).map_err(|error| CompileError::FileWriteFailed {
-            path: output_path.clone(),
-            error: error.to_string(),
-        })?;
-        return Ok(());
+        Target::Executable => {
+            ir_translate(&mut context, &ids)?;
+            let ir_code = ir_generate(&context, &ids, main_document_id)?;
+            assemble(ir_code, &output_path.to_string_lossy())
+        }
+    }
+}
+
+fn write_text_output(path: &Path, content: &str) -> CompileResult<()> {
+    fs::write(path, content).map_err(|error| CompileError::FileWriteFailed {
+        path: path.to_string_lossy().into_owned(),
+        error: error.to_string(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PathBuf;
+    use super::Target;
+    use super::resolve_output_path;
+
+    #[test]
+    fn missing_user_path_falls_back_to_target_default() {
+        assert_eq!(resolve_output_path(Target::Ast, None), PathBuf::from("a.ast"));
+        assert_eq!(resolve_output_path(Target::Ir, None), PathBuf::from("a.ll"));
+        assert_eq!(resolve_output_path(Target::Executable, None), PathBuf::from("a.out"));
     }
 
-    ir_translate(&mut context, &ids)?;
-
-    let ir_code = ir_generate(&context, &ids, main_document_id)?;
-
-    if let Some(Target::Ir) = options.target {
-        if !output_path.contains('.') {
-            output_path.push_str(".ll");
-        }
-        fs::write(&output_path, ir_code).map_err(|error| CompileError::FileWriteFailed {
-            path: output_path.clone(),
-            error: error.to_string(),
-        })?;
-        return Ok(());
+    #[test]
+    fn user_path_without_extension_gets_target_extension() {
+        assert_eq!(
+            resolve_output_path(Target::Ast, Some(PathBuf::from("output"))),
+            PathBuf::from("output.ast"),
+        );
+        assert_eq!(
+            resolve_output_path(Target::Ir, Some(PathBuf::from("output"))),
+            PathBuf::from("output.ll"),
+        );
     }
 
-    assemble(ir_code, &output_path)?;
+    #[test]
+    fn user_path_with_existing_extension_is_kept_verbatim() {
+        assert_eq!(
+            resolve_output_path(Target::Ast, Some(PathBuf::from("foo.txt"))),
+            PathBuf::from("foo.txt"),
+        );
+        assert_eq!(
+            resolve_output_path(Target::Ast, Some(PathBuf::from("a.b.c"))),
+            PathBuf::from("a.b.c"),
+        );
+    }
 
-    Ok(())
+    #[test]
+    fn executable_target_does_not_force_extension() {
+        assert_eq!(
+            resolve_output_path(Target::Executable, Some(PathBuf::from("mybin"))),
+            PathBuf::from("mybin"),
+        );
+    }
 }
