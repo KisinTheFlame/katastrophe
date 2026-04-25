@@ -6,6 +6,7 @@ use crate::CompileResult;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
+use crate::compiler::err::IceUnwrap;
 use crate::compiler::scope::ScopeGuard;
 use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::Document;
@@ -190,7 +191,11 @@ impl Translator {
     fn translate_lvalue(&mut self, lvalue: &Rc<LValue>) -> CompileResult<(Rc<Instruction>, Rc<Value>, Rc<IrType>)> {
         match lvalue.as_ref() {
             LValue::Id(identifier) => {
-                let IrReference::Binding((value, ir_type)) = self.scope.lookup(identifier).unwrap() else {
+                let IrReference::Binding((value, ir_type)) = self
+                    .scope
+                    .lookup(identifier)
+                    .or_ice("lvalue identifier should be resolved by type checking")
+                else {
                     sys_error!("should be inspected in type checking.");
                 };
                 Ok((Instruction::NoOperation.into(), value, ir_type))
@@ -470,7 +475,11 @@ impl Translator {
             .unzip::<_, _, Vec<_>, Vec<_>>();
         let field_instructions: Array<_> = field_instructions.into();
         let field_values: Array<_> = field_values.into();
-        let IrReference::StructDef(id, _, fields) = self.scope.lookup(name).unwrap() else {
+        let IrReference::StructDef(id, _, fields) = self
+            .scope
+            .lookup(name)
+            .or_ice("struct spawn type should be resolved by type checking")
+        else {
             sys_error!("should be inspected in type checking.");
         };
         let ir_type = IrType::Struct {
@@ -773,8 +782,16 @@ impl Translator {
             Statement::Let(let_detail) => self.translate_let_statement(let_detail),
             Statement::Define(define_detail) => self.translate_define_statement(context, define_detail),
             Statement::Using(UsingPath(document_path, symbol)) => {
-                let id = context.id_map.get(document_path).unwrap();
-                let Some(referent) = context.ir_model_map.get(id).unwrap().get(symbol) else {
+                let id = context
+                    .id_map
+                    .get(document_path)
+                    .or_ice("using path should be registered during parsing");
+                let Some(referent) = context
+                    .ir_model_map
+                    .get(id)
+                    .or_ice("ir_model_map should be populated during pre_scan_global")
+                    .get(symbol)
+                else {
                     sys_error!("should be inspected: used symbol must exist");
                 };
                 match referent.as_ref() {
@@ -826,7 +843,10 @@ impl Translator {
             sys_error!("pre_scan_global called twice on the same Translator");
         }
         self.global_scope_guard = Some(self.scope.enter(Tag::Global));
-        let document = context.document_map.get(&document_id).unwrap();
+        let document = context
+            .document_map
+            .get(&document_id)
+            .or_ice("document should exist during pre_scan_global");
         let mut ir_model_map = HashMap::new();
         document
             .statements
@@ -868,9 +888,9 @@ impl Translator {
                     let Reference::StructDef(id, _, _) = context
                         .reference_map
                         .get(&document_id)
-                        .unwrap()
+                        .or_ice("reference map should be populated during parsing")
                         .get(name)
-                        .unwrap()
+                        .or_ice("struct reference should be registered during parsing")
                         .as_ref()
                     else {
                         sys_error!("must be a struct definition");

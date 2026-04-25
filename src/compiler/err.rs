@@ -19,6 +19,19 @@ macro_rules! sys_error {
     };
 }
 
+/// 用于把"理论上不可能为 None"的 `Option`（编译器内部不变量）展开为值；
+/// 万一不变量被破坏，以编译器内部错误的形式 panic，比裸 `.unwrap()`
+/// 给出更有用的定位信息。
+pub trait IceUnwrap<T> {
+    fn or_ice(self, msg: &str) -> T;
+}
+
+impl<T> IceUnwrap<T> for Option<T> {
+    fn or_ice(self, msg: &str) -> T {
+        self.unwrap_or_else(|| sys_error!("{msg}"))
+    }
+}
+
 pub enum CompileError {
     // Lexis Errors
     IllegalIntegerLiteral(String),

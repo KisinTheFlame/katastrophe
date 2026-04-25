@@ -4,6 +4,7 @@ use crate::CompileResult;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
+use crate::compiler::err::IceUnwrap;
 use crate::compiler::scope::Scope;
 use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::crumb::FunctionPrototype;
@@ -109,8 +110,16 @@ impl LValueChecker {
                 _ => Ok(()),
             },
             Statement::Using(UsingPath(document_path, symbol)) => {
-                let id = context.id_map.get(document_path).unwrap();
-                let Some(reference) = context.reference_map.get(id).unwrap().get(symbol) else {
+                let id = context
+                    .id_map
+                    .get(document_path)
+                    .or_ice("using path should be registered during parsing");
+                let Some(reference) = context
+                    .reference_map
+                    .get(id)
+                    .or_ice("reference map should be populated during parsing")
+                    .get(symbol)
+                else {
                     sys_error!("used symbol must exist");
                 };
                 if let Reference::Binding(_, mutability) = reference.as_ref() {

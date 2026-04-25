@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::compiler::bit_width::BitWidth;
 use crate::compiler::context::StructId;
+use crate::compiler::err::IceUnwrap;
 use crate::compiler::syntax::ast::crumb::Field;
 use crate::compiler::syntax::ast::crumb::Identifier;
 use crate::compiler::syntax::ast::ty::Type;
@@ -122,7 +123,7 @@ pub fn find_field(object_type: &Rc<IrType>, field: &Rc<Identifier>) -> (usize, R
         .map(Rc::as_ref)
         .enumerate()
         .find(|(_, IrField(field_name, _))| field_name == field)
-        .unwrap();
+        .or_ice("struct field should be verified by type checking before find_field");
     (index, field_type.clone())
 }
 

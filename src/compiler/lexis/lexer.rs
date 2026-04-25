@@ -1,5 +1,6 @@
 use crate::CompileResult;
 use crate::compiler::err::CompileError;
+use crate::compiler::err::IceUnwrap;
 use crate::sys_error;
 
 use super::text::Reader;
@@ -196,7 +197,10 @@ impl Lexer {
     }
 
     fn digest_symbol(&mut self) -> CompileResult<Token> {
-        let c = self.reader.peek().unwrap();
+        let c = self
+            .reader
+            .peek()
+            .or_ice("digest_symbol entered without a peeked character");
         self.reader.forward();
         let symbol = match c {
             '+' => Symbol::Add,

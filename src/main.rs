@@ -12,6 +12,7 @@ use katastrophe::CompileResult;
 use katastrophe::assemble;
 use katastrophe::compiler::context::Context;
 use katastrophe::compiler::err::CompileError;
+use katastrophe::compiler::err::IceUnwrap;
 use katastrophe::compiler::semantics::main_function_checker::main_function_check;
 use katastrophe::ir_generate;
 use katastrophe::ir_translate;
@@ -104,7 +105,7 @@ impl ArgHandler {
         let mut options = CommandOptions::new();
 
         while self.args.peek().is_some() {
-            let arg = self.args.next().unwrap();
+            let arg = self.args.next().or_ice("argument iterator empty after non-empty peek");
             match arg.as_str() {
                 "-o" | "--output" => {
                     let output_filename = self.next_else(CommandError::MissingOutputFile)?;
@@ -160,8 +161,12 @@ fn execute() -> CompileResult<()> {
     let mut arg_handler = ArgHandler::new(args);
     let options = arg_handler.handle();
 
-    let input_filename = options.input_path.unwrap();
-    let mut output_path = options.output_path.unwrap();
+    let input_filename = options
+        .input_path
+        .or_ice("input path missing after complete_by_default");
+    let mut output_path = options
+        .output_path
+        .or_ice("output path missing after complete_by_default");
 
     let code = fs::read_to_string(&input_filename).map_err(|error| CompileError::FileReadFailed {
         path: input_filename,
@@ -189,8 +194,8 @@ fn execute() -> CompileResult<()> {
         let output = ids
             .iter()
             .map(|id| {
-                let document_path = context.path_map.get(id).unwrap();
-                let ast = context.document_map.get(id).unwrap();
+                let document_path = context.path_map.get(id).or_ice("missing document path during ast dump");
+                let ast = context.document_map.get(id).or_ice("missing document during ast dump");
                 formatdoc! {"
                     ----- {document_path} -----
                     {ast}

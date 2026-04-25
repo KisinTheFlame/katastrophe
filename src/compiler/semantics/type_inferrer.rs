@@ -6,6 +6,7 @@ use crate::compiler::bit_width::BitWidth;
 use crate::compiler::context::Context;
 use crate::compiler::context::DocumentId;
 use crate::compiler::err::CompileError;
+use crate::compiler::err::IceUnwrap;
 use crate::compiler::scope::Scope;
 use crate::compiler::scope::Tag;
 use crate::compiler::syntax::ast::Document;
@@ -444,8 +445,14 @@ impl TypeInferrer {
                 body,
             }) => self.infer_define_statement(context, prototype, body)?,
             Statement::Using(UsingPath(document_path, symbol)) => {
-                let used_document_id = context.id_map.get(document_path).unwrap();
-                let reference_map = context.reference_map.get(used_document_id).unwrap();
+                let used_document_id = context
+                    .id_map
+                    .get(document_path)
+                    .or_ice("using path should be registered during parsing");
+                let reference_map = context
+                    .reference_map
+                    .get(used_document_id)
+                    .or_ice("reference map should be populated for used document");
                 let Some(reference) = reference_map.get(symbol) else {
                     sys_error!("used symbol must exist");
                 };
@@ -458,13 +465,23 @@ impl TypeInferrer {
     }
 
     fn pre_scan_def(&mut self, context: &Context, document_id: u32, func_name: &Rc<String>) -> CompileResult<()> {
-        let reference = context.reference_map.get(&document_id).unwrap().get(func_name).unwrap();
+        let reference = context
+            .reference_map
+            .get(&document_id)
+            .or_ice("reference map should be populated during parsing")
+            .get(func_name)
+            .or_ice("function reference should be registered during parsing");
         self.scope.declare(func_name.clone(), reference.clone())?;
         Ok(())
     }
 
     fn pre_scan_struct(&mut self, name: Rc<String>, context: &Context, document_id: DocumentId) -> CompileResult<()> {
-        let reference = context.reference_map.get(&document_id).unwrap().get(&name).unwrap();
+        let reference = context
+            .reference_map
+            .get(&document_id)
+            .or_ice("reference map should be populated during parsing")
+            .get(&name)
+            .or_ice("struct reference should be registered during parsing");
         self.scope.declare(name, reference.clone())?;
         Ok(())
     }

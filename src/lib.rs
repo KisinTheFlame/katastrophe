@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use compiler::context::Context;
 use compiler::err::CompileError;
+use compiler::err::IceUnwrap;
 use compiler::ir::builtin::generate_entry;
 use compiler::ir::builtin::generate_libc_function;
 use compiler::ir::instruction::IrReference;
@@ -52,7 +53,13 @@ pub fn ir_translate(context: &mut Context, ids: &Arr<u32>) -> CompileResult<()> 
     let mut id_translators = ids
         .iter()
         .map(|id| {
-            let translator = Translator::new(context.path_map.get(id).unwrap().clone());
+            let translator = Translator::new(
+                context
+                    .path_map
+                    .get(id)
+                    .or_ice("missing document path during ir_translate")
+                    .clone(),
+            );
             (*id, translator)
         })
         .collect::<Vec<_>>();
@@ -71,8 +78,14 @@ pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> 
     let ir = ids
         .iter()
         .map(|id| {
-            let document_path = context.path_map.get(id).unwrap();
-            let ir = context.instruction.get(id).unwrap();
+            let document_path = context
+                .path_map
+                .get(id)
+                .or_ice("missing document path during ir_generate");
+            let ir = context
+                .instruction
+                .get(id)
+                .or_ice("missing instruction for document during ir_generate");
             formatdoc! {"
                 ; ----- {document_path} -----
                 {ir}
@@ -84,9 +97,9 @@ pub fn ir_generate(context: &Context, ids: &Arr<u32>, main_document_id: u32) -> 
     let IrReference::Binding((main_value, _)) = context
         .ir_model_map
         .get(&main_document_id)
-        .unwrap()
+        .or_ice("missing ir_model_map for main document")
         .get(&String::from("main"))
-        .unwrap()
+        .or_ice("missing main reference in ir_model_map")
         .as_ref()
     else {
         sys_error!("failed to get main value");
