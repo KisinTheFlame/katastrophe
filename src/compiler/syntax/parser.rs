@@ -147,7 +147,7 @@ impl Parser {
             let mut expression = Expression::Identifier(identifier.into());
             while self.expect_symbol(Symbol::Dot)? {
                 let field = self.parse_identifier()?.into();
-                expression = Expression::Access(expression.into(), Type::Unknown.into(), field);
+                expression = Expression::Access(expression.into(), None, field);
             }
             return Ok(expression);
         }
@@ -185,11 +185,7 @@ impl Parser {
                 }
             };
             self.lexer.advance()?;
-            Ok(Expression::Unary(
-                operator,
-                Type::Unknown.into(),
-                self.parse_primary()?.into(),
-            ))
+            Ok(Expression::Unary(operator, None, self.parse_primary()?.into()))
         } else {
             let kind = if let Some(token) = self.lexer.peek() {
                 CompileError::UnexpectedToken(token.clone())
@@ -303,7 +299,7 @@ impl Parser {
 
             if current_operator == Binary::As {
                 let to_type = self.parse_type()?;
-                lhs = Expression::Cast(Rc::new(lhs), Type::Unknown.into(), to_type.into());
+                lhs = Expression::Cast(Rc::new(lhs), None, to_type.into());
                 continue;
             }
 
@@ -312,19 +308,14 @@ impl Parser {
             if !current_operator.is_left_associative() {
                 return Ok(Expression::Binary(
                     current_operator,
-                    Type::Unknown.into(),
+                    None,
                     Rc::new(lhs),
                     Rc::new(self.parse_binary_expression_rhs(0, rhs)?),
                 ));
             }
 
             let Some(next_operator) = self.peek_binary_operator() else {
-                return Ok(Expression::Binary(
-                    current_operator,
-                    Type::Unknown.into(),
-                    Rc::new(lhs),
-                    Rc::new(rhs),
-                ));
+                return Ok(Expression::Binary(current_operator, None, Rc::new(lhs), Rc::new(rhs)));
             };
             let need_to_associate_with_right = if next_operator.is_left_associative() {
                 next_operator.precedence() > current_operator.precedence()
@@ -337,7 +328,7 @@ impl Parser {
                 rhs
             };
 
-            lhs = Expression::Binary(current_operator, Type::Unknown.into(), Rc::new(lhs), Rc::new(rhs));
+            lhs = Expression::Binary(current_operator, None, Rc::new(lhs), Rc::new(rhs));
         }
     }
 
@@ -495,7 +486,7 @@ impl Parser {
         let identifier = &prototype.identifier;
         if self.scope.is_global() {
             let function_type = prototype.function_type.clone();
-            let function_reference = Reference::Binding(function_type, Mutability::Immutable).into();
+            let function_reference = Reference::Binding(Some(function_type), Mutability::Immutable).into();
             self.reference_map.insert(identifier.clone(), function_reference);
         }
         let _function_scope = self.scope.enter(Tag::Function(identifier.clone()));
@@ -517,11 +508,10 @@ impl Parser {
         };
         let lvalue = Rc::new(self.parse_identifier()?);
         let lvalue_type = if self.expect_keyword(Keyword::As)? {
-            self.parse_type()?
+            Some(Rc::new(self.parse_type()?))
         } else {
-            Type::Unknown
+            None
         };
-        let lvalue_type = Rc::new(lvalue_type);
         self.digest_symbol(Symbol::Assign)?;
         let expression = self.parse_expression()?;
         self.digest_symbol(Symbol::Semicolon)?;

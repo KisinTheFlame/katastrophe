@@ -14,7 +14,7 @@ pub fn main_function_check(context: &Context, main_document_id: DocumentId) -> C
     let Some(reference_map) = context.reference_map.get(&main_document_id) else {
         sys_error!("reference map must exist");
     };
-    let Some(Reference::Binding(main_type, _)) = reference_map.get(&String::from("main")).map(Rc::as_ref) else {
+    let Some(Reference::Binding(Some(main_type), _)) = reference_map.get(&String::from("main")).map(Rc::as_ref) else {
         return Err(CompileError::UndeclaredMainFunction);
     };
     let expected_main_function_type = Type::Function {

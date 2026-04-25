@@ -90,6 +90,7 @@ impl PrettyFormat for Statement {
             }
             Statement::Let(LetDetail(variable, expression)) => {
                 let Variable(id, var_type, mutability) = variable;
+                let var_type = var_type.as_ref().map_or_else(|| "?".to_string(), ToString::to_string);
                 writeln!(f, "{indent}Let {mutability} {id} as {var_type}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }

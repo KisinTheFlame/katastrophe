@@ -22,15 +22,15 @@ pub enum Expression {
     FloatLiteral(f64),
     BoolLiteral(bool),
 
-    Unary(Unary, Rc<Type>, Rc<Expression>),
-    Binary(Binary, Rc<Type>, Rc<Expression>, Rc<Expression>),
+    Unary(Unary, Option<Rc<Type>>, Rc<Expression>),
+    Binary(Binary, Option<Rc<Type>>, Rc<Expression>, Rc<Expression>),
 
     Call(Rc<Identifier>, Array<Expression>),
 
-    Cast(Rc<Expression>, Rc<Type>, Rc<Type>),
+    Cast(Rc<Expression>, Option<Rc<Type>>, Rc<Type>),
 
     StructSpawn(Rc<Identifier>, Array<FieldInit>),
-    Access(Rc<Expression>, Rc<Type>, Rc<Identifier>),
+    Access(Rc<Expression>, Option<Rc<Type>>, Rc<Identifier>),
 }
 
 impl PrettyFormat for Expression {
@@ -68,6 +68,7 @@ impl PrettyFormat for Expression {
                     .try_for_each(|arg| arg.pretty_format(f, indentation_num + 1))?;
             }
             Expression::Cast(expression, from_type, to_type) => {
+                let from_type = from_type.as_ref().map_or_else(|| "?".to_string(), ToString::to_string);
                 writeln!(f, "{indentation}As from {from_type} to {to_type}")?;
                 expression.pretty_format(f, indentation_num + 1)?;
             }

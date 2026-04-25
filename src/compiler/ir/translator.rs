@@ -142,10 +142,13 @@ impl Translator {
     fn translate_binary_expression(
         &mut self,
         operator: Binary,
-        expression_type: Rc<Type>,
+        expression_type: Option<Rc<Type>>,
         left: &Rc<Expression>,
         right: &Rc<Expression>,
     ) -> CompileResult<(Rc<Instruction>, Option<Rc<Value>>)> {
+        let Some(expression_type) = expression_type else {
+            sys_error!("binary expression type not filled by inferrer");
+        };
         let operator = match operator {
             Binary::Add => IrBinaryOpcode::Add,
             Binary::Subtract => IrBinaryOpcode::Subtract,
@@ -238,9 +241,12 @@ impl Translator {
     fn translate_unary_expression(
         &mut self,
         operator: Unary,
-        sub_type: Rc<Type>,
+        sub_type: Option<Rc<Type>>,
         expression: &Rc<Expression>,
     ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+        let Some(sub_type) = sub_type else {
+            sys_error!("unary expression type not filled by inferrer");
+        };
         let (expression_instruction, expression_value) = self.translate_value_expression(expression)?;
 
         let result = self.declare(DeclType::Anonymous)?;
@@ -317,9 +323,12 @@ impl Translator {
     fn translate_cast_expression(
         &mut self,
         expression: &Rc<Expression>,
-        from_type: &Rc<Type>,
+        from_type: Option<&Rc<Type>>,
         to_type: &Rc<Type>,
     ) -> CompileResult<(Rc<Instruction>, Rc<Value>)> {
+        let Some(from_type) = from_type else {
+            sys_error!("cast expression source type not filled by inferrer");
+        };
         let (instruction, from_value) = self.translate_value_expression(expression)?;
         match (from_type.as_ref(), to_type.as_ref()) {
             (Type::Int(from_width), Type::Int(to_width)) => match from_width.cmp(to_width) {
@@ -408,7 +417,7 @@ impl Translator {
             }
             Expression::Call(function_name, arguments) => self.translate_call_expression(function_name, arguments),
             Expression::Cast(expression, from_type, to_type) => {
-                let (instruction, value) = self.translate_cast_expression(expression, from_type, to_type)?;
+                let (instruction, value) = self.translate_cast_expression(expression, from_type.as_ref(), to_type)?;
                 Ok((instruction, Some(value)))
             }
             Expression::StructSpawn(name, fields) => {
@@ -416,6 +425,9 @@ impl Translator {
                 Ok((instruction, Some(value)))
             }
             Expression::Access(expression, object_type, field) => {
+                let Some(object_type) = object_type.as_ref() else {
+                    sys_error!("access expression object type not filled by inferrer");
+                };
                 let object_type = Rc::new(IrType::from(object_type.as_ref()));
                 let (object_instruction, object_value) = self.translate_value_expression(expression)?;
                 let (index, _) = find_field(&object_type, field);
@@ -628,6 +640,9 @@ impl Translator {
         &mut self,
         LetDetail(Variable(identifier, var_type, _), expression): &LetDetail,
     ) -> CompileResult<Rc<Instruction>> {
+        let Some(var_type) = var_type.as_ref() else {
+            sys_error!("let variable type not filled by inferrer");
+        };
         let data_type = IrType::from(var_type.as_ref()).into();
         let (expression_instructions, expression) = self.translate_value_expression(expression)?;
         let assign_instruction = if self.scope.is_global() {
@@ -824,6 +839,9 @@ impl Translator {
                 | Statement::If(_)
                 | Statement::While(_) => sys_error!("unchecked global procedures"),
                 Statement::Let(LetDetail(Variable(identifier, var_type, _), _)) => {
+                    let Some(var_type) = var_type.as_ref() else {
+                        sys_error!("global let variable type not filled by inferrer");
+                    };
                     let data_type = Rc::new(IrType::from(var_type.clone()));
                     let value = self.declare(DeclType::Global(identifier.clone(), data_type.clone()))?;
                     ir_model_map.insert(identifier.clone(), IrReference::Binding((value, data_type)).into());

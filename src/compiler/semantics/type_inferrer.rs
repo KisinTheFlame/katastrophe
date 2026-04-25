@@ -77,7 +77,7 @@ impl TypeInferrer {
                 expression_type,
             });
         }
-        Ok(Expression::Binary(Binary::Assign, lvalue_type, lvalue, expression).into())
+        Ok(Expression::Binary(Binary::Assign, Some(lvalue_type), lvalue, expression).into())
     }
 
     fn infer_spawn(
@@ -152,7 +152,7 @@ impl TypeInferrer {
             return Err(CompileError::FieldNotExist(field.clone()));
         };
         Ok((
-            Expression::Access(expression, struct_type.clone(), field.clone()).into(),
+            Expression::Access(expression, Some(struct_type.clone()), field.clone()).into(),
             field_type.clone(),
         ))
     }
@@ -162,7 +162,7 @@ impl TypeInferrer {
             Expression::Identifier(identifier) => {
                 let reference = self.scope.lookup(identifier);
                 let reference = reference.as_ref().map(Rc::as_ref);
-                let Some(Reference::Binding(id_type, _)) = reference else {
+                let Some(Reference::Binding(Some(id_type), _)) = reference else {
                     return Err(CompileError::UndeclaredIdentifier(identifier.clone()));
                 };
                 (Expression::Identifier(identifier.clone()).into(), id_type.clone())
@@ -177,7 +177,10 @@ impl TypeInferrer {
             Expression::Unary(operator, _, child) => {
                 let (child, result_type) = self.infer_expression(child)?;
                 let child_type = self.infer_unary_operation_type(&(*operator, result_type.clone()))?;
-                (Expression::Unary(*operator, child_type, child).into(), result_type)
+                (
+                    Expression::Unary(*operator, Some(child_type), child).into(),
+                    result_type,
+                )
             }
             Expression::Binary(operator, _, left, right) => {
                 if *operator == Binary::Assign {
@@ -189,7 +192,7 @@ impl TypeInferrer {
                     let child_type = left_type.clone();
                     let result_type = self.infer_binary_operation_type(&(*operator, left_type, right_type))?;
                     (
-                        Expression::Binary(*operator, child_type, left, right).into(),
+                        Expression::Binary(*operator, Some(child_type), left, right).into(),
                         result_type,
                     )
                 }
@@ -206,7 +209,7 @@ impl TypeInferrer {
                 let Some(function_type) = self.scope.lookup(function_id) else {
                     return Err(CompileError::UndeclaredIdentifier(function_id.clone()));
                 };
-                let Reference::Binding(function_type, _) = function_type.as_ref() else {
+                let Reference::Binding(Some(function_type), _) = function_type.as_ref() else {
                     return Err(CompileError::CallTargetNotFunction(function_id.clone()));
                 };
                 let Type::Function {
@@ -239,7 +242,7 @@ impl TypeInferrer {
                     }
                 }
                 (
-                    Expression::Cast(expression, from_type, to_type.clone()).into(),
+                    Expression::Cast(expression, Some(from_type), to_type.clone()).into(),
                     to_type.clone(),
                 )
             }
@@ -261,8 +264,8 @@ impl TypeInferrer {
         let Some(function_type) = self.scope.lookup(&function_name) else {
             sys_error!("current function must be declared in scope");
         };
-        let Reference::Binding(function_type, _) = function_type.as_ref() else {
-            sys_error!("current function reference must be a binding");
+        let Reference::Binding(Some(function_type), _) = function_type.as_ref() else {
+            sys_error!("current function reference must be a binding with concrete type");
         };
         let Type::Function {
             return_type: expected_type,
@@ -331,9 +334,9 @@ impl TypeInferrer {
         LetDetail(Variable(identifier, lvalue_type, mutability), expression): &LetDetail,
     ) -> CompileResult<Statement> {
         let (expression, expression_type) = self.infer_expression(expression)?;
-        let lvalue_type = match lvalue_type.as_ref() {
-            Type::Unknown => expression_type.clone(),
-            _ => lvalue_type.clone(),
+        let lvalue_type = match lvalue_type {
+            None => expression_type.clone(),
+            Some(annotated) => annotated.clone(),
         };
         if lvalue_type != expression_type {
             return Err(CompileError::AssignTypeMismatch {
@@ -341,7 +344,7 @@ impl TypeInferrer {
                 expression_type,
             });
         }
-        let reference = Reference::Binding(lvalue_type.clone(), *mutability).into();
+        let reference = Reference::Binding(Some(lvalue_type.clone()), *mutability).into();
         if self.scope.is_global() && !Self::is_supported_global_initializer(expression.as_ref()) {
             return Err(CompileError::GlobalInitializerNotConstant);
         }
@@ -351,7 +354,7 @@ impl TypeInferrer {
             self.scope.overwrite(identifier.clone(), reference);
         }
         Ok(Statement::Let(LetDetail(
-            Variable(identifier.clone(), lvalue_type, *mutability),
+            Variable(identifier.clone(), Some(lvalue_type), *mutability),
             expression,
         )))
     }
@@ -387,7 +390,7 @@ impl TypeInferrer {
             .map(Rc::as_ref)
             .zip(parameter_types.iter())
             .try_for_each(|(Parameter(identifier), parameter_type)| {
-                let reference = Reference::Binding(parameter_type.clone(), Mutability::Immutable).into();
+                let reference = Reference::Binding(Some(parameter_type.clone()), Mutability::Immutable).into();
                 self.scope.declare(identifier.clone(), reference)
             })?;
         let body = self.infer_statement(context, body)?;

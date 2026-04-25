@@ -65,7 +65,6 @@ impl From<&Type> for IrType {
                     .map(Rc::from)
                     .collect(),
             },
-            Type::Unknown => sys_error!("unknown type should be resolved before ir translation"),
         }
     }
 }

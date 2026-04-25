@@ -9,6 +9,6 @@ use super::crumb::Mutability;
 use super::ty::Type;
 
 pub enum Reference {
-    Binding(Rc<Type>, Mutability),
+    Binding(Option<Rc<Type>>, Mutability),
     StructDef(StructId, Rc<Identifier>, Array<Field>),
 }
