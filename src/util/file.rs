@@ -4,28 +4,33 @@ use std::path::Path;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 
+use crate::CompileResult;
+use crate::compiler::err::CompileError;
 use crate::constants::common::TMP;
 
-#[must_use]
-pub fn gen_tmp_ir_path() -> String {
-    let dir = make_tmp_dir("ir");
+/// # Errors
+pub fn gen_tmp_ir_path() -> CompileResult<String> {
+    let dir = make_tmp_dir("ir")?;
     let filename = gen_filename();
-    format!("{dir}/{filename}.ll")
+    Ok(format!("{dir}/{filename}.ll"))
 }
 
-#[must_use]
-pub fn gen_tmp_exe_path() -> String {
-    let dir = make_tmp_dir("exe");
+/// # Errors
+pub fn gen_tmp_exe_path() -> CompileResult<String> {
+    let dir = make_tmp_dir("exe")?;
     let filename = gen_filename();
-    format!("{dir}/{filename}")
+    Ok(format!("{dir}/{filename}"))
 }
 
-fn make_tmp_dir(tag: &str) -> String {
+fn make_tmp_dir(tag: &str) -> CompileResult<String> {
     let dir = format!("{TMP}/{tag}");
     if !Path::new(&dir).exists() {
-        fs::create_dir_all(dir.clone()).unwrap();
+        fs::create_dir_all(&dir).map_err(|error| CompileError::FileWriteFailed {
+            path: dir.clone(),
+            error: error.to_string(),
+        })?;
     }
-    dir
+    Ok(dir)
 }
 
 fn gen_filename() -> String {
