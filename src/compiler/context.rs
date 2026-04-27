@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::define_id_generator;
@@ -20,6 +21,9 @@ pub struct Context {
     pub reference_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Rc<Reference>>>,
     pub ir_model_map: HashMap<DocumentId, HashMap<Rc<Identifier>, Rc<IrReference>>>,
     pub instruction: HashMap<DocumentId, Rc<Instruction>>,
+    /// 项目根目录的绝对路径。空 `PathBuf` 表示未设置（如纯字符串编译入口），
+    /// 此情况下任何非 std 的 `using` 都将失败为 `UnknownPackage`。
+    pub project_root: PathBuf,
 }
 
 impl Context {
@@ -32,6 +36,7 @@ impl Context {
             reference_map: HashMap::new(),
             ir_model_map: HashMap::new(),
             instruction: HashMap::new(),
+            project_root: PathBuf::new(),
         }
     }
 }
