@@ -91,7 +91,7 @@ fn test_unknown_package() {
             return 0;
         }
         ",
-        |error| matches!(error, CompileError::UnknownPackage),
+        |error| matches!(error, CompileError::UnknownPackage { .. }),
     );
 }
 
@@ -138,7 +138,8 @@ fn test_float_literal_is_unsupported() {
 }
 
 #[test]
-fn test_non_std_package_path_is_unsupported() {
+fn test_non_std_package_without_project_root_is_unknown() {
+    // 字符串编译入口（不带 project_root）下，任何非 std `using` 都应失败为 UnknownPackage。
     assert_compile_fails(
         "
         using app::io::putchar;
@@ -147,7 +148,7 @@ fn test_non_std_package_path_is_unsupported() {
             return 0;
         }
         ",
-        |error| matches!(error, CompileError::UnsupportedFeature("non-std package path")),
+        |error| matches!(error, CompileError::UnknownPackage { .. }),
     );
 }
 
