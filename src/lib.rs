@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 use std::rc::Rc;
 
@@ -24,10 +25,50 @@ pub mod util;
 
 pub type CompileResult<T> = Result<T, CompileError>;
 
+/// 用一段源码字符串作为入口编译，主要供测试与 `--ast` / `--ir` 之类无文件路径的场景使用。
+/// `Context.project_root` 不会被设置；任何非 std 的 `using` 都会失败为 `UnknownPackage`。
+///
 /// # Errors
 pub fn syntax_analyze(context: &mut Context, code: &str) -> CompileResult<u32> {
-    let document_path = DocumentPath([Rc::new(String::from("self"))].into()).into();
+    let document_path = DocumentPath([Rc::new(String::from("__entry__"))].into()).into();
     let mut parser = Parser::new(document_path, code)?;
+    let main_document_id = parser.parse_document(context)?;
+    Ok(main_document_id)
+}
+
+/// 用一个 `.katas` 文件路径作为入口编译。会 `canonicalize` 入口、把其父目录写入
+/// `Context.project_root`，并以入口文件名（去 `.katas` 后缀）作为入口的 `DocumentPath` 唯一节点。
+/// 这是支持非 std 多文件项目的标准入口。
+///
+/// # Errors
+pub fn syntax_analyze_path(context: &mut Context, entry_path: &Path) -> CompileResult<u32> {
+    let canonical = fs::canonicalize(entry_path).map_err(|error| CompileError::EntryResolveFailed {
+        path: entry_path.to_string_lossy().into_owned(),
+        error: error.to_string(),
+    })?;
+    let project_root = canonical
+        .parent()
+        .ok_or_else(|| CompileError::EntryResolveFailed {
+            path: canonical.to_string_lossy().into_owned(),
+            error: String::from("entry path has no parent directory"),
+        })?
+        .to_path_buf();
+    let entry_stem = canonical
+        .file_stem()
+        .ok_or_else(|| CompileError::EntryResolveFailed {
+            path: canonical.to_string_lossy().into_owned(),
+            error: String::from("entry path has no file stem"),
+        })?
+        .to_string_lossy()
+        .into_owned();
+    let code = fs::read_to_string(&canonical).map_err(|error| CompileError::FileReadFailed {
+        path: canonical.to_string_lossy().into_owned(),
+        error: error.to_string(),
+    })?;
+
+    context.project_root = project_root;
+    let document_path = DocumentPath([Rc::new(entry_stem)].into()).into();
+    let mut parser = Parser::new(document_path, &code)?;
     let main_document_id = parser.parse_document(context)?;
     Ok(main_document_id)
 }
