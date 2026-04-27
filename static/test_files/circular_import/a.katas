@@ -1,0 +1,11 @@
+using std::io::putchar;
+using b::print_b;
+
+def print_a() {
+    putchar('a');
+    putchar('\n');
+}
+
+def cycle_into_b() {
+    print_b();
+}

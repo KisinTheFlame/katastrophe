@@ -1,0 +1,13 @@
+using std::io::putchar;
+using b::delegate;
+
+def helper() {
+    putchar('o');
+    putchar('k');
+    putchar('\n');
+}
+
+def main() -> i32 {
+    delegate();
+    return 0;
+}

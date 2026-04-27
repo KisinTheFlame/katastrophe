@@ -1,0 +1,6 @@
+using Utils::greet;
+
+def main() -> i32 {
+    greet();
+    return 0;
+}

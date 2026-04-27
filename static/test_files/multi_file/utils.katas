@@ -1,0 +1,7 @@
+using std::io::putchar;
+
+def greet() {
+    putchar('h');
+    putchar('i');
+    putchar('\n');
+}
