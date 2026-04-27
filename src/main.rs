@@ -14,7 +14,7 @@ use katastrophe::dump_ast;
 use katastrophe::ir_generate;
 use katastrophe::ir_translate;
 use katastrophe::lvalue_check;
-use katastrophe::syntax_analyze;
+use katastrophe::syntax_analyze_path;
 use katastrophe::type_infer;
 
 #[derive(Parser)]
@@ -93,13 +93,8 @@ fn run(cli: Cli) -> CompileResult<()> {
     let target = Target::from_cli(&cli);
     let output_path = resolve_output_path(target, cli.output);
 
-    let code = fs::read_to_string(&cli.input).map_err(|error| CompileError::FileReadFailed {
-        path: cli.input.to_string_lossy().into_owned(),
-        error: error.to_string(),
-    })?;
-
     let mut context = Context::new();
-    let main_document_id = syntax_analyze(&mut context, &code)?;
+    let main_document_id = syntax_analyze_path(&mut context, &cli.input)?;
 
     let mut ids = context.document_map.keys().copied().collect::<Vec<_>>();
     ids.sort_unstable();
