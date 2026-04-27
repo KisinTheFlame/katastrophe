@@ -50,7 +50,10 @@ pub enum CompileError {
     UnexpectedToken(Token),
 
     UnknownType(Rc<Identifier>),
-    UnknownPackage,
+    UnknownPackage {
+        path: String,
+    },
+    BuiltinNotAllowedOutsideStd(Rc<Identifier>),
 
     // Semantics Errors
     UndeclaredIdentifier(Rc<Identifier>),
@@ -104,6 +107,10 @@ pub enum CompileError {
         path: String,
         error: String,
     },
+    EntryResolveFailed {
+        path: String,
+        error: String,
+    },
     FileWriteFailed {
         path: String,
         error: String,
@@ -152,8 +159,11 @@ impl Display for CompileError {
             CompileError::UnknownType(unknown_type) => {
                 write!(f, "encountering unknown type: {unknown_type}")
             }
-            CompileError::UnknownPackage => {
-                write!(f, "unknown package.")
+            CompileError::UnknownPackage { path } => {
+                write!(f, "unknown package, looked up: {path}")
+            }
+            CompileError::BuiltinNotAllowedOutsideStd(identifier) => {
+                write!(f, "builtin function '{identifier}' is only allowed in std packages")
             }
 
             // Semantics Errors
@@ -269,6 +279,9 @@ impl Display for CompileError {
             // Environment Errors
             CompileError::FileReadFailed { path, error } => {
                 write!(f, "failed to read file '{path}': {error}")
+            }
+            CompileError::EntryResolveFailed { path, error } => {
+                write!(f, "failed to resolve entry file '{path}': {error}")
             }
             CompileError::FileWriteFailed { path, error } => {
                 write!(f, "failed to write file '{path}': {error}")
