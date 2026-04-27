@@ -484,6 +484,9 @@ impl Parser {
         let builtin = self.expect_keyword(Keyword::Builtin)?;
         let prototype = self.parse_function_prototype()?;
         let identifier = &prototype.identifier;
+        if builtin && !self.is_in_std_document() {
+            return Err(CompileError::BuiltinNotAllowedOutsideStd(identifier.clone()));
+        }
         if self.scope.is_global() {
             let function_type = prototype.function_type.clone();
             let function_reference = Reference::Binding(Some(function_type), Mutability::Immutable).into();
@@ -497,6 +500,11 @@ impl Parser {
             body,
         };
         Ok(Statement::Define(define_detail))
+    }
+
+    fn is_in_std_document(&self) -> bool {
+        let DocumentPath(nodes) = self.document_path.as_ref();
+        nodes.first().map(Rc::as_ref).map(String::as_str) == Some("std")
     }
 
     fn parse_let_statement(&mut self) -> CompileResult<Statement> {
