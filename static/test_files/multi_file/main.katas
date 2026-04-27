@@ -1,0 +1,15 @@
+using std::io::putchar;
+using utils::greet;
+using math::basic::add;
+
+def print_digit(d as i8) {
+    putchar('0' + d);
+}
+
+def main() -> i32 {
+    greet();
+    let sum = add(2, 5);
+    print_digit(sum as i8);
+    putchar('\n');
+    return 0;
+}

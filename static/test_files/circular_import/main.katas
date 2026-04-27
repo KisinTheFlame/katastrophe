@@ -1,0 +1,9 @@
+using std::io::putchar;
+using a::cycle_into_b;
+using a::print_a;
+
+def main() -> i32 {
+    cycle_into_b();
+    print_a();
+    return 0;
+}
